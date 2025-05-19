@@ -1,0 +1,14 @@
+/.direnv
+/build
+*.beam
+*.ez
+erl_crash.dump
+
+/pages/*
+!/pages/.gitkeep
+/priv/static/assets/*
+!/priv/static/assets/.gitkeep
+!/priv/static/assets/logo.png
+!/priv/static/assets/background.png
+/priv/static/extra/*
+!/priv/static/extra/default.js

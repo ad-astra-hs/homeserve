@@ -1,0 +1,10 @@
+default_job = "run"
+kill = ["killall", "-9", "beam.smp"]
+need_stdout = true
+background = false
+on_change_strategy = "kill_then_restart"
+
+[jobs.run]
+command = ["gleam", "run"]
+
+[keybindings]
