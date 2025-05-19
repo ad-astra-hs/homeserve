@@ -1,16 +1,18 @@
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/string
-import sketch/css/media
-import tempo
-import tempo/date
+import homeserve/pages/errors
 
 import homeserve/pages/panel
 import lustre/attribute
 import lustre/element/html
 import sketch/css
 import sketch/css/length
+import sketch/css/media
+import tempo
+import tempo/date
 
 import homeserve/base
 
@@ -72,7 +74,7 @@ fn unique_contributors(panels: List(panel.Meta)) -> Hoc {
   Hoc(artists:, writers:, musicians:, misc:)
 }
 
-fn get_contributor_info(target_name: String) -> Contributor {
+fn get_contributor_info(target_name: String) -> Option(Contributor) {
   let panels = panel.panel_list()
   let contributions =
     panels
@@ -111,12 +113,16 @@ fn get_contributor_info(target_name: String) -> Contributor {
     |> list.unique
     |> list.sort(order.reverse(int.compare))
 
-  Contributor(
-    name: target_name,
-    contributed_to: unique_panels,
-    types_of_contributions: unique_types,
-    first_contribution: date.current_local(),
-  )
+  case list.is_empty(matching) {
+    True -> None
+    False ->
+      Some(Contributor(
+        name: target_name,
+        contributed_to: unique_panels,
+        types_of_contributions: unique_types,
+        first_contribution: date.current_local(),
+      ))
+  }
 }
 
 fn compare_types(a: ContributionType, b: ContributionType) -> order.Order {
@@ -224,83 +230,88 @@ pub fn build_hoc() -> base.Page {
 }
 
 pub fn build_contributor(contributor: String) -> base.Page {
-  let stats = get_contributor_info(contributor)
+  case get_contributor_info(contributor) {
+    Some(stats) -> {
+      let head = [html.title([], "Contributor: " <> contributor)]
+      let css = [
+        css.global(".contributor", [
+          css.display("flex"),
+          css.flex("1"),
+          css.flex_direction("row"),
+          css.padding(length.pt(10)),
+          css.media(media.max_width(length.px(768)), [
+            css.flex_direction("column"),
+          ]),
+        ]),
+        css.global(".contributor_main", [
+          css.display("flex"),
+          css.flex("1"),
+          css.flex_direction("column"),
+          css.max_width(length.percent(50)),
+          css.margin(length.pt(10)),
+          css.padding(length.pt(10)),
+          css.background("#e0e0e0"),
+          css.media(media.max_width(length.px(768)), [
+            css.max_width(length.percent(100)),
+            css.height_("auto"),
+          ]),
+        ]),
+        css.global(".contributor_side", [
+          css.width(length.percent(50)),
+          css.margin(length.pt(10)),
+          css.padding(length.pt(10)),
+          css.background("#e0e0e0"),
+          css.media(media.max_width(length.px(768)), [
+            css.width_("auto"),
+            css.height_("auto"),
+          ]),
+        ]),
+      ]
+      let body = [
+        html.div([attribute.class("contributor")], [
+          html.div([attribute.class("contributor_main")], [
+            html.h1([], [html.text(contributor)]),
+            html.p([], [
+              html.text(
+                "Total Contributions: "
+                <> stats.contributed_to |> list.length |> int.to_string,
+              ),
+            ]),
+            html.p([], [
+              html.text(
+                "Types of Contribution: "
+                <> stats.types_of_contributions
+                |> list.map(fn(contribution) { to_string(contribution) })
+                |> string.join(", "),
+              ),
+            ]),
+            html.p([], [
+              html.text(
+                "First Contribution: "
+                <> stats.first_contribution |> date.format(tempo.ISO8601Date),
+              ),
+            ]),
+          ]),
+          html.div([attribute.class("contributor_side")], [
+            html.h2([], [html.text("Panels Contributed:")]),
+            html.ul(
+              [],
+              stats.contributed_to
+                |> list.map(fn(panel) {
+                  let assert Ok(panel_) = panel.decode_meta(panel)
+                  html.li([], [
+                    html.a([attribute.href("/read/" <> int.to_string(panel))], [
+                      html.text(panel_.title),
+                    ]),
+                  ])
+                }),
+            ),
+          ]),
+        ]),
+      ]
 
-  let head = [html.title([], "Contributor: " <> contributor)]
-  let css = [
-    css.global(".contributor", [
-      css.display("flex"),
-      css.flex("1"),
-      css.flex_direction("row"),
-      css.padding(length.pt(10)),
-      css.media(media.max_width(length.px(768)), [css.flex_direction("column")]),
-    ]),
-    css.global(".contributor_main", [
-      css.display("flex"),
-      css.flex("1"),
-      css.flex_direction("column"),
-      css.max_width(length.percent(50)),
-      css.margin(length.pt(10)),
-      css.padding(length.pt(10)),
-      css.background("#e0e0e0"),
-      css.media(media.max_width(length.px(768)), [
-        css.max_width(length.percent(100)),
-        css.height_("auto"),
-      ]),
-    ]),
-    css.global(".contributor_side", [
-      css.width(length.percent(50)),
-      css.margin(length.pt(10)),
-      css.padding(length.pt(10)),
-      css.background("#e0e0e0"),
-      css.media(media.max_width(length.px(768)), [
-        css.width_("auto"),
-        css.height_("auto"),
-      ]),
-    ]),
-  ]
-  let body = [
-    html.div([attribute.class("contributor")], [
-      html.div([attribute.class("contributor_main")], [
-        html.h1([], [html.text(contributor)]),
-        html.p([], [
-          html.text(
-            "Total Contributions: "
-            <> stats.contributed_to |> list.length |> int.to_string,
-          ),
-        ]),
-        html.p([], [
-          html.text(
-            "Types of Contribution: "
-            <> stats.types_of_contributions
-            |> list.map(fn(contribution) { to_string(contribution) })
-            |> string.join(", "),
-          ),
-        ]),
-        html.p([], [
-          html.text(
-            "First Contribution: "
-            <> stats.first_contribution |> date.format(tempo.ISO8601Date),
-          ),
-        ]),
-      ]),
-      html.div([attribute.class("contributor_side")], [
-        html.h2([], [html.text("Panels Contributed:")]),
-        html.ul(
-          [],
-          stats.contributed_to
-            |> list.map(fn(panel) {
-              let assert Ok(panel_) = panel.decode_meta(panel)
-              html.li([], [
-                html.a([attribute.href("/read/" <> int.to_string(panel))], [
-                  html.text(panel_.title),
-                ]),
-              ])
-            }),
-        ),
-      ]),
-    ]),
-  ]
-
-  base.Page(head:, css:, body:)
+      base.Page(head:, css:, body:)
+    }
+    None -> errors.build_404()
+  }
 }
