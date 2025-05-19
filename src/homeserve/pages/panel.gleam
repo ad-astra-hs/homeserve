@@ -6,13 +6,17 @@ import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
-import gleam/string
 
 import lustre/attribute
 import lustre/element
 import lustre/element/html
 import simplifile
+import sketch/css
+import sketch/css/length
+import sketch/css/media
+import sketch/css/transform
 
+import homeserve/base
 import homeserve/pages/errors
 
 pub type Meta {
@@ -98,8 +102,8 @@ pub fn build_panel(
   metadata: Meta,
   parsed_page: String,
   next_page_text: Option(String),
-) {
-  #(
+) -> base.Page {
+  let head =
     [
       [
         html.title([], "> " <> metadata.title),
@@ -125,131 +129,165 @@ pub fn build_panel(
         html.script([attribute.src("/assets/misc/" <> js <> ".js")], "")
       }),
     ]
-      |> list.flatten,
-    [
-      html.div([attribute.class("page_margins")], [
-        html.div([attribute.class("page_outer")], [
-          html.h2([], [html.text(metadata.title)]),
-          case metadata.media.kind {
-            "image" ->
-              html.img(
-                list.append(
-                  [attribute.src(metadata.media.url), attribute.class("panel")],
-                  case metadata.media.alt {
-                    Some(alt) -> [attribute.alt(alt), attribute.title(alt)]
-                    None -> []
-                  },
-                ),
-              )
-            "video" ->
-              html.video(
-                list.append(
-                  [
-                    attribute.controls(True),
-                    attribute.src(metadata.media.url),
-                    attribute.class("panel"),
-                  ],
-                  case metadata.media.alt {
-                    Some(alt) -> [attribute.alt(alt), attribute.title(alt)]
-                    None -> []
-                  },
-                ),
-                [],
-              )
-            _ -> element.none()
-          },
-          element.unsafe_raw_html(
-            "",
-            "div",
-            [attribute.class("page_inner")],
-            parsed_page,
-          ),
-          html.br([]),
-          html.br([]),
-          case next_page_text {
-            Some(next) -> {
-              html.a(
+    |> list.flatten
+  let css = [
+    css.global(".page_margins", [
+      css.transform([transform.translate_x(length.percent(30))]),
+      css.width(length.percent(65)),
+      css.media(media.max_width(length.px(768)), [
+        css.transform([]),
+        css.width(length.percent(100)),
+      ]),
+    ]),
+    css.global(".page_outer", [
+      css.display("flex"),
+      css.flex_direction("column"),
+      css.background("white"),
+    ]),
+    css.global(".page_outer h2", [css.text_align("center")]),
+    css.global(".page_outer img,video", [css.margin_bottom(length.pt(10))]),
+    css.global(".page_inner", [
+      css.text_align("center"),
+      css.margin(length.pt(10)),
+      css.margin_bottom(length.rlh(1.0)),
+    ]),
+    css.global(".next", [css.font_size(length.pt(16)), css.margin(length.pt(5))]),
+    css.global(".bottom_links", [css.display("flex"), css.margin(length.pt(5))]),
+    css.global(".credits", [
+      css.color("gray"),
+      css.margin(length.pt(10)),
+      css.margin_left(length.pt(5)),
+      css.margin_bottom(length.pt(0)),
+    ]),
+    css.global(".credits a", [css.color("gray")]),
+    css.global(".bottom_links a:last-child", [css.margin_left_("auto")]),
+  ]
+  let body = [
+    html.div([attribute.class("page_margins")], [
+      html.div([attribute.class("page_outer")], [
+        html.h2([], [html.text(metadata.title)]),
+        case metadata.media.kind {
+          "image" ->
+            html.img(
+              list.append(
+                [attribute.src(metadata.media.url), attribute.class("panel")],
+                case metadata.media.alt {
+                  Some(alt) -> [attribute.alt(alt), attribute.title(alt)]
+                  None -> []
+                },
+              ),
+            )
+          "video" ->
+            html.video(
+              list.append(
                 [
-                  attribute.href("/read/" <> int.to_string(metadata.index + 1)),
-                  attribute.class("next"),
+                  attribute.controls(True),
+                  attribute.src(metadata.media.url),
+                  attribute.class("panel"),
                 ],
-                [html.text("> " <> next)],
-              )
-            }
-            None -> {
-              element.none()
-            }
-          },
-          html.br([]),
-          html.br([]),
-          html.span([attribute.class("credits")], [
-            html.sup([], [
-              html.text(
-                "Art: "
-                <> string.concat(list.intersperse(
-                  metadata.credits.artists,
-                  ", ",
-                ))
-                <> ". ",
+                case metadata.media.alt {
+                  Some(alt) -> [attribute.alt(alt), attribute.title(alt)]
+                  None -> []
+                },
               ),
-            ]),
-            html.sup([], [
-              html.text(
-                "Writing: "
-                <> string.concat(list.intersperse(
-                  metadata.credits.writers,
-                  ", ",
-                ))
-                <> ". ",
-              ),
-            ]),
-            case list.length(metadata.credits.musicians) {
-              0 -> element.none()
-              _ ->
-                html.sup([], [
-                  html.text(
-                    "Music: "
-                    <> string.concat(list.intersperse(
-                      metadata.credits.musicians,
-                      ", ",
-                    ))
-                    <> ". ",
-                  ),
-                ])
-            },
-            case list.length(metadata.credits.misc) {
-              0 -> element.none()
-              _ ->
-                html.sup([], [
-                  html.text(
-                    "Misc. Help: "
-                    <> string.concat(list.intersperse(
-                      metadata.credits.misc,
-                      ", ",
-                    ))
-                    <> ". ",
-                  ),
-                ])
-            },
-          ]),
-          html.br([]),
-          html.span([attribute.class("bottom_links")], [
-            html.a([attribute.href("/read/1")], [html.text("Start Over")]),
-            html.wbr([attribute.style("margin", "5pt")]),
+              [],
+            )
+          _ -> element.none()
+        },
+        element.unsafe_raw_html(
+          "",
+          "div",
+          [attribute.class("page_inner")],
+          parsed_page,
+        ),
+        html.br([]),
+        html.br([]),
+        case next_page_text {
+          Some(next) -> {
             html.a(
-              [attribute.href("/read/" <> int.to_string(metadata.index - 1))],
-              [html.text("Go Back")],
-            ),
-            html.a([attribute.href("/")], [html.text("Home")]),
+              [
+                attribute.href("/read/" <> int.to_string(metadata.index + 1)),
+                attribute.class("next"),
+              ],
+              [html.text("> " <> next)],
+            )
+          }
+          None -> {
+            element.none()
+          }
+        },
+        html.br([]),
+        html.br([]),
+        html.span([attribute.class("credits")], [
+          html.sup([], [
+            html.text("Art: "),
+            ..{
+              list.map(metadata.credits.artists, fn(artist) {
+                html.a([attribute.href("/hoc/" <> artist)], [html.text(artist)])
+              })
+            }
+            |> list.intersperse(html.text(", "))
+            |> list.append([html.text(". ")])
           ]),
+          html.sup([], [
+            html.text("Writing: "),
+            ..{
+              list.map(metadata.credits.writers, fn(writer) {
+                html.a([attribute.href("/hoc/" <> writer)], [html.text(writer)])
+              })
+            }
+            |> list.intersperse(html.text(", "))
+            |> list.append([html.text(". ")])
+          ]),
+          case list.length(metadata.credits.musicians) {
+            0 -> element.none()
+            _ ->
+              html.sup([], [
+                html.text("Music: "),
+                ..{
+                  list.map(metadata.credits.musicians, fn(musician) {
+                    html.a([attribute.href("/hoc/" <> musician)], [
+                      html.text(musician),
+                    ])
+                  })
+                }
+                |> list.intersperse(html.text(", "))
+                |> list.append([html.text(". ")])
+              ])
+          },
+          case list.length(metadata.credits.misc) {
+            0 -> element.none()
+            _ ->
+              html.sup([], [
+                html.text("Misc. Help: "),
+                ..{
+                  list.map(metadata.credits.misc, fn(misc) {
+                    html.a([attribute.href("/hoc/" <> misc)], [html.text(misc)])
+                  })
+                }
+                |> list.intersperse(html.text(", "))
+                |> list.append([html.text(". ")])
+              ])
+          },
+        ]),
+        html.br([]),
+        html.span([attribute.class("bottom_links")], [
+          html.a([attribute.href("/read/1")], [html.text("Start Over")]),
+          html.wbr([attribute.style("margin", "5pt")]),
+          html.a(
+            [attribute.href("/read/" <> int.to_string(metadata.index - 1))],
+            [html.text("Go Back")],
+          ),
+          html.a([attribute.href("/")], [html.text("Home")]),
         ]),
       ]),
-    ],
-  )
+    ]),
+  ]
+  base.Page(head:, css:, body:)
 }
 
 pub fn render_panel(panel: Int) {
-  case simplifile.read("./panels/" <> int.to_string(panel) <> "/page.txt") {
+  case simplifile.read("./pages/" <> int.to_string(panel) <> "/page.txt") {
     Ok(got_page) -> {
       let assert Ok(metadata) = decode_meta(panel)
 

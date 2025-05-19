@@ -1,12 +1,14 @@
 import gleam/http.{Get}
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/string
 
 import wisp.{type Request, type Response}
 
 import homeserve/base
 import homeserve/pages/errors
+import homeserve/pages/hoc
 import homeserve/pages/home
 import homeserve/pages/panel
 import homeserve/web
@@ -25,10 +27,14 @@ pub fn handle_request(req: Request) -> Response {
     ["read"] | ["read", "0"] -> wisp.redirect("/read/1")
     ["read", page] -> {
       case int.base_parse(page, 10) {
-        Ok(page) -> serve_panel(req, page)
+        Ok(page) -> {
+          serve_panel(req, page)
+        }
         _ -> serve_404(req)
       }
     }
+    ["hoc"] -> serve_hoc(req, None)
+    ["hoc", volunteer] -> serve_hoc(req, Some(volunteer))
 
     // Media assets (music, panels, etc.)
     ["assets", asset] -> {
@@ -53,28 +59,34 @@ pub fn handle_request(req: Request) -> Response {
 fn serve_home(req) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let #(head, body) = home.build_home()
-
   wisp.ok()
-  |> wisp.html_body(base.render_page(head, body))
+  |> wisp.html_body(base.render_page(home.build_home()))
 }
 
 fn serve_panel(req: Request, which: Int) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let #(head, body) = panel.render_panel(which)
+  wisp.ok()
+  |> wisp.html_body(base.render_page(panel.render_panel(which)))
+}
+
+fn serve_hoc(req: Request, volunteer: Option(String)) -> Response {
+  use <- wisp.require_method(req, Get)
+
+  let page = case volunteer {
+    Some(volunteer) -> hoc.build_contributor(volunteer)
+    None -> hoc.build_hoc()
+  }
 
   wisp.ok()
-  |> wisp.html_body(base.render_page(head, body))
+  |> wisp.html_body(base.render_page(page))
 }
 
 fn serve_404(req: Request) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let #(head, body) = errors.build_404()
-
   wisp.response(404)
-  |> wisp.html_body(base.render_page(head, body))
+  |> wisp.html_body(base.render_page(errors.build_404()))
 }
 
 fn serve_asset(req: Request, asset: String) -> Response {

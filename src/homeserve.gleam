@@ -7,10 +7,7 @@ import wisp/wisp_mist
 import homeserve/router
 
 pub fn main() {
-  echo "TODO: Extract tuple to custom class for rendering pages"
-  echo "TODO: Improve 404"
   echo "TODO: Music"
-  echo "TODO: HoC (Hall of Contributors)"
   echo "TODO: Detach from Ad Astra, add configuration options"
 
   wisp.configure_logger()
