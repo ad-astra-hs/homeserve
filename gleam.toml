@@ -26,5 +26,6 @@ bbcode_pleroma = ">= 0.2.0 and < 1.0.0"
 gleam_json = ">= 2.3.0 and < 3.0.0"
 sketch_lustre = ">= 3.0.0 and < 4.0.0"
 sketch = ">= 4.1.0 and < 5.0.0"
+gleam_regexp = ">= 1.1.1 and < 2.0.0"
 
 [dev-dependencies]

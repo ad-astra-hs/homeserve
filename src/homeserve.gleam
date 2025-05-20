@@ -7,7 +7,6 @@ import wisp/wisp_mist
 import homeserve/router
 
 pub fn main() {
-  echo "TODO: Music"
   echo "TODO: Detach from Ad Astra, add configuration options"
 
   wisp.configure_logger()

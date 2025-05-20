@@ -41,6 +41,7 @@ bbcode_pleroma = { version = ">= 0.2.0 and < 1.0.0" }
 gleam_erlang = { version = ">= 0.34.0 and < 1.0.0" }
 gleam_http = { version = ">= 4.0.0 and < 5.0.0" }
 gleam_json = { version = ">= 2.3.0 and < 3.0.0" }
+gleam_regexp = { version = ">= 1.1.1 and < 2.0.0" }
 gleam_stdlib = { version = ">= 0.58.0 and < 0.60.0" }
 glee = { version = ">= 2.2.2 and < 3.0.0" }
 gtempo = { version = ">= 7.1.0 and < 8.0.0" }

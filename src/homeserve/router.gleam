@@ -1,3 +1,4 @@
+import gleam/float
 import gleam/http.{Get}
 import gleam/int
 import gleam/list
@@ -25,6 +26,7 @@ pub fn handle_request(req: Request) -> Response {
 
     // Webcomic
     ["read"] | ["read", "0"] -> wisp.redirect("/read/1")
+    ["read", "toggle_quirks"] -> toggle_quirks(req)
     ["read", page] -> {
       case int.base_parse(page, 10) {
         Ok(page) -> {
@@ -66,8 +68,13 @@ fn serve_home(req) -> Response {
 fn serve_panel(req: Request, which: Int) -> Response {
   use <- wisp.require_method(req, Get)
 
+  let panel = case wisp.get_cookie(req, "quirked", wisp.PlainText) {
+    Ok(cookie) -> panel.render_panel(which, cookie)
+    _ -> panel.render_panel(which, "true")
+  }
+
   wisp.ok()
-  |> wisp.html_body(base.render_page(panel.render_panel(which)))
+  |> wisp.html_body(base.render_page(panel))
 }
 
 fn serve_hoc(req: Request, volunteer: Option(String)) -> Response {
@@ -98,12 +105,14 @@ fn serve_asset(req: Request, asset: String) -> Response {
   }
 
   let extension = case extension {
-    "svg" -> "svg+xml"
-    _ -> extension
+    "svg" -> "image/svg+xml"
+    "mp3" -> "audio/mpeg"
+    "mp4" -> "video/mpeg"
+    _ -> "image/" <> extension
   }
 
   wisp.ok()
-  |> wisp.set_header("content-type", "image/" <> extension)
+  |> wisp.set_header("content-type", extension)
   |> wisp.set_header("cache-control", "public, max-age=604800")
   |> wisp.set_body(wisp.File("priv/static/assets/" <> asset))
 }
@@ -113,4 +122,26 @@ fn serve_extra(req: Request, extra: String) -> Response {
 
   wisp.ok()
   |> wisp.set_body(wisp.File("priv/static/extra/" <> extra))
+}
+
+fn toggle_quirks(req: Request) -> Response {
+  use <- wisp.require_method(req, Get)
+
+  let quirked = case wisp.get_cookie(req, "quirked", wisp.PlainText) {
+    Ok(perchance) ->
+      case perchance {
+        "true" -> "false"
+        _ -> "true"
+      }
+    Error(_) -> "false"
+  }
+
+  wisp.no_content()
+  |> wisp.set_cookie(
+    req,
+    "quirked",
+    quirked,
+    wisp.PlainText,
+    float.round(3.156e7),
+  )
 }
