@@ -223,6 +223,7 @@ pub fn build_panel(
       css.padding(length.pt(3)),
       css.border("1pt solid grey"),
       css.background("#e9e9e9"),
+      css.margin_bottom(length.rlh(1.0)),
     ]),
     css.global(".page_inner summary:hover", [
       css.background("#c9c9c9"),
@@ -440,10 +441,13 @@ pub fn render_panel(panel: Int, quirked_cookie: String) {
         _ -> None
       }
 
-      let assert Ok(parsed_page) = case quirked_cookie {
-        "false" -> to_html(got_page)
-        _ -> to_html(quirks.parse_document(got_page))
+      let quirked = case quirked_cookie {
+        "false" -> False
+        _ -> True
       }
+
+      let assert Ok(parsed_page) =
+        to_html(quirks.parse_document(got_page, quirked))
 
       build_panel(metadata, parsed_page, next_page_text)
     }

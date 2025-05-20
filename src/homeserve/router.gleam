@@ -4,6 +4,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
+import homeserve/pages/privacy_policy
 
 import wisp.{type Request, type Response}
 
@@ -54,6 +55,9 @@ pub fn handle_request(req: Request) -> Response {
     // Any misc. redirects
     ["discord"] -> wisp.redirect("https://discord.gg/TjMT9gsVPT")
     ["apply"] -> wisp.redirect("https://forms.gle/4Fz62i4bJ5Z63ZkYA")
+
+    // Privacy Policy
+    ["privacy"] -> serve_privacy_policy(req)
     _ -> serve_404(req)
   }
 }
@@ -94,6 +98,13 @@ fn serve_404(req: Request) -> Response {
 
   wisp.response(404)
   |> wisp.html_body(base.render_page(errors.build_404()))
+}
+
+fn serve_privacy_policy(req) -> Response {
+  use <- wisp.require_method(req, Get)
+
+  wisp.ok()
+  |> wisp.html_body(base.render_page(privacy_policy.build_privacy_policy()))
 }
 
 fn serve_asset(req: Request, asset: String) -> Response {

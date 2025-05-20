@@ -3,7 +3,7 @@ import gleam/option.{Some}
 import gleam/regexp
 import gleam/string
 
-pub fn parse_document(doc: String) -> String {
+pub fn parse_document(doc: String, quirked: Bool) -> String {
   let assert Ok(pattern) = regexp.from_string("^([A-Z]{2}): (.*)$")
 
   string.split(doc, "\n")
@@ -13,7 +13,7 @@ pub fn parse_document(doc: String) -> String {
         let assert Ok(Some(character)) = list.first(match.submatches)
         let assert Ok(Some(message)) = list.last(match.submatches)
 
-        quirk_apply(character, message)
+        format_dialogue(character, message, quirked)
       }
       _ -> line
     }
@@ -21,7 +21,7 @@ pub fn parse_document(doc: String) -> String {
   |> string.join("\n")
 }
 
-fn quirk_apply(character: String, message: String) -> String {
+fn format_dialogue(character: String, message: String, quirked: Bool) -> String {
   let quirk = case character {
     "ZB" -> #([#("", "")], string.lowercase, "")
     "AA" -> #([#("", "")], string.uppercase, "")
@@ -44,13 +44,26 @@ fn quirk_apply(character: String, message: String) -> String {
     })
     |> caps
 
-  "<span style='color:"
-  <> color
-  <> "' title='"
-  <> message
-  <> "'>"
-  <> character
-  <> ": "
-  <> quirked_message
-  <> "</span>"
+  case quirked {
+    True -> {
+      "<span style='color:"
+      <> color
+      <> "' title='"
+      <> message
+      <> "'>"
+      <> character
+      <> ": "
+      <> quirked_message
+      <> "</span>"
+    }
+    False -> {
+      "<span style='color:"
+      <> color
+      <> "'>"
+      <> character
+      <> ": "
+      <> message
+      <> "</span>"
+    }
+  }
 }

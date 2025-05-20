@@ -124,6 +124,7 @@ pub fn render_page(page: Page) {
               html.text("Source Code"),
             ]),
             html.a([attribute.href("/hoc")], [html.text("Volunteers")]),
+            html.a([attribute.href("/privacy")], [html.text("Privacy Policy")]),
           ]),
           html.div([attribute.class("banner")], [
             html.img([
