@@ -189,11 +189,11 @@ pub fn build_panel(
       css.background("black"),
       css.color("white"),
     ]),
-    css.global(".quirk_toggle", [
+    css.global(".quirk_toggle, .animation_toggle", [
       css.border("1pt solid grey"),
       css.background("#e9e9e9"),
     ]),
-    css.global(".quirk_toggle:hover", [
+    css.global(".quirk_toggle:hover, .animation_toggle:hover", [
       css.border("1pt solid grey"),
       css.background("#c9c9c9"),
     ]),
@@ -414,6 +414,15 @@ pub fn build_panel(
             [html.text("Toggle Quirks")],
           ),
           html.wbr([attribute.style("margin", "5pt")]),
+          //TODO: Implement this and put it somewhere better that doesn't interfere with mobile layout
+          //html.button(
+          //  [
+          //    attribute.attribute("onclick", ""),
+          //    attribute.class("animation_toggle"),
+          //  ],
+          //  [html.text("Toggle Animations")],
+          //),
+          //html.wbr([attribute.style("margin", "5pt")]),
           html.a([attribute.href("/read/1")], [html.text("Start Over")]),
           html.wbr([attribute.style("margin", "5pt")]),
           html.a(

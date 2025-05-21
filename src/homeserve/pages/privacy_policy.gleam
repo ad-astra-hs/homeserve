@@ -2,7 +2,6 @@ import lustre/attribute
 import lustre/element/html
 import sketch/css
 import sketch/css/length
-import sketch/css/transform
 
 import homeserve/base
 
@@ -10,17 +9,10 @@ pub fn build_privacy_policy() -> base.Page {
   let head = [html.title([], "Privacy Policy")]
   let css = [
     css.global(".dead_center", [
-      css.position("absolute"),
-      css.width(length.percent(50)),
-      css.top(length.percent(50)),
-      css.left(length.percent(50)),
-      css.transform([
-        transform.translate_x(length.percent(-50)),
-        transform.translate_y(length.percent(-50)),
-      ]),
       css.text_align("justify"),
       css.background("#e0e0e0"),
       css.padding(length.pt(10)),
+      css.margin(length.pt(10)),
     ]),
   ]
   let body = [

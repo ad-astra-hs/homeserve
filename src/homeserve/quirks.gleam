@@ -24,10 +24,20 @@ pub fn parse_document(doc: String, quirked: Bool) -> String {
 fn format_dialogue(character: String, message: String, quirked: Bool) -> String {
   let quirk = case character {
     "ZB" -> #([#("", "")], string.lowercase, "")
-    "AA" -> #([#("", "")], string.uppercase, "")
-    "SF" -> #([#("", "")], string.lowercase, "")
+    "AA" -> #([#("e|E", "3"), #("oo|OO|oO|Oo", "oOo")], string.uppercase, "")
+    "SF" -> #(
+      [#("k|K", "kk"), #("c|C", "k"), #("kkk", "kk"), #("$", ".")],
+      string.lowercase,
+      "",
+    )
     "SS" -> #(
-      [#("ts", "penis"), #("pmo", "balls")],
+      [
+        #("s|S", "$"),
+        #(",|\"", ",,"),
+        #("'", ","),
+        #("\\.", ","),
+        #("(.+? .+?)( .+)", "\\1,,\\2"),
+      ],
       string.lowercase,
       "#a1a100",
     )

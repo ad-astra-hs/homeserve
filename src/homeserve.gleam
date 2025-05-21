@@ -7,6 +7,8 @@ import wisp/wisp_mist
 import homeserve/router
 
 pub fn main() {
+  echo "TODO: Background for site, staggered grid of pixelated troll signs, rotated 45deg and tiled(?)"
+  echo "TODO: Add cookie for animations toggle, have webserver send a static frame if cookie is set to true."
   echo "TODO: Detach from Ad Astra, add configuration options"
 
   wisp.configure_logger()
