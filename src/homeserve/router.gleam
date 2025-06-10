@@ -1,3 +1,23 @@
+import gleam/dynamic
+import gleam/dynamic/decode
+import gleam/erlang/atom
+import simplifile
+
+@external(erlang, "Elixir.Mogrify", "open")
+pub fn open(path: String) -> dynamic.Dynamic
+
+@external(erlang, "Elixir.Mogrify", "custom")
+pub fn custom(image: dynamic.Dynamic, custom: String) -> dynamic.Dynamic
+
+@external(erlang, "Elixir.Mogrify", "format")
+pub fn format(image: dynamic.Dynamic, format: String) -> dynamic.Dynamic
+
+@external(erlang, "Elixir.Mogrify", "save")
+pub fn save(
+  image: dynamic.Dynamic,
+  options: List(#(atom.Atom, dynamic.Dynamic)),
+) -> dynamic.Dynamic
+
 import gleam/float
 import gleam/http.{Get}
 import gleam/int
@@ -27,7 +47,8 @@ pub fn handle_request(req: Request) -> Response {
 
     // Webcomic
     ["read"] | ["read", "0"] -> wisp.redirect("/read/1")
-    ["read", "toggle_quirks"] -> toggle_quirks(req)
+    ["read", "toggle_quirks"] -> toggle_a11y(req, "quirked")
+    ["read", "toggle_animations"] -> toggle_a11y(req, "animated")
     ["read", page] -> {
       case int.base_parse(page, 10) {
         Ok(page) -> {
@@ -72,13 +93,19 @@ fn serve_home(req) -> Response {
 fn serve_panel(req: Request, which: Int) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let panel = case wisp.get_cookie(req, "quirked", wisp.PlainText) {
-    Ok(cookie) -> panel.render_panel(which, cookie)
-    _ -> panel.render_panel(which, "true")
+  let quirked = case wisp.get_cookie(req, "quirked", wisp.PlainText) {
+    Ok(cookie) -> cookie
+    _ -> "true"
+  }
+  let animated = case wisp.get_cookie(req, "animated", wisp.PlainText) {
+    Ok(cookie) -> cookie
+    _ -> "true"
   }
 
   wisp.ok()
-  |> wisp.html_body(base.render_page(panel))
+  |> wisp.html_body(
+    base.render_page(panel.render_panel(which, quirked, animated)),
+  )
 }
 
 fn serve_hoc(req: Request, volunteer: Option(String)) -> Response {
@@ -110,6 +137,16 @@ fn serve_privacy_policy(req) -> Response {
 fn serve_asset(req: Request, asset: String) -> Response {
   use <- wisp.require_method(req, Get)
 
+  let query = wisp.get_query(req)
+  echo query
+
+  let animated = case list.key_find(query, "animated") {
+    Ok(anim) if anim == "False" -> {
+      False
+    }
+    _ -> True
+  }
+
   let assert #(_, Ok(extension)) = case string.split(asset, ".") {
     [single] -> #("", Ok(single))
     parts -> #("", list.last(parts))
@@ -122,10 +159,55 @@ fn serve_asset(req: Request, asset: String) -> Response {
     _ -> "image/" <> extension
   }
 
+  let #(body, extension) = case extension, animated {
+    "image/gif", False -> {
+      case simplifile.is_file("priv/converted/" <> asset <> "_static.jpg") {
+        Ok(False) -> {
+          let image =
+            open("priv/static/assets/" <> asset)
+            |> custom("coalesce")
+            |> format("jpg")
+            |> save([])
+
+          let decoder = {
+            use image <- decode.field(
+              atom.create_from_string("path"),
+              decode.string,
+            )
+            decode.success(image)
+          }
+
+          case decode.run(image, decoder) {
+            Ok(path) -> {
+              let path = string.replace(path, ".jpg", "-0.jpg")
+              let assert Ok(_) =
+                simplifile.copy(
+                  path,
+                  "priv/converted/" <> asset <> "_static.jpg",
+                )
+
+              #(wisp.File(path), "image/jpeg")
+            }
+            Error(_) -> {
+              #(wisp.File("priv/static/assets/" <> asset), "image/gif")
+            }
+          }
+        }
+        _ -> #(
+          wisp.File("priv/converted/" <> asset <> "_static.jpg"),
+          "image/jpg",
+        )
+      }
+    }
+    _, _ -> #(wisp.File("priv/static/assets/" <> asset), extension)
+  }
+
+  echo body
+
   wisp.ok()
   |> wisp.set_header("content-type", extension)
   |> wisp.set_header("cache-control", "public, max-age=604800")
-  |> wisp.set_body(wisp.File("priv/static/assets/" <> asset))
+  |> wisp.set_body(body)
 }
 
 fn serve_extra(req: Request, extra: String) -> Response {
@@ -135,10 +217,10 @@ fn serve_extra(req: Request, extra: String) -> Response {
   |> wisp.set_body(wisp.File("priv/static/extra/" <> extra))
 }
 
-fn toggle_quirks(req: Request) -> Response {
+fn toggle_a11y(req: Request, a11y_option: String) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let quirked = case wisp.get_cookie(req, "quirked", wisp.PlainText) {
+  let value = case wisp.get_cookie(req, a11y_option, wisp.PlainText) {
     Ok(perchance) ->
       case perchance {
         "true" -> "false"
@@ -150,8 +232,8 @@ fn toggle_quirks(req: Request) -> Response {
   wisp.no_content()
   |> wisp.set_cookie(
     req,
-    "quirked",
-    quirked,
+    a11y_option,
+    value,
     wisp.PlainText,
     float.round(3.156e7),
   )

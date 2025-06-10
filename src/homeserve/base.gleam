@@ -54,7 +54,7 @@ fn stylesheet(globals: List(css.Global)) -> String {
     css.global(".banner", [css.height(length.px(100))]),
     css.global(".banner img", [
       css.object_fit("cover"),
-      css.height(length.px(100)),
+      css.height(length.pt(73)),
       css.object_position("right top"),
       css.position("relative"),
     ]),
@@ -73,6 +73,10 @@ fn stylesheet(globals: List(css.Global)) -> String {
       css.media(media.max_width(length.px(768)), [css.flex_direction("column")]),
     ]),
     css.global(".footer", [css.background("black"), css.margin_top_("auto")]),
+    css.global(".charm", [
+      css.width(length.px(10)),
+      css.media(media.max_width(length.px(768)), [css.width(length.px(0))]),
+    ]),
     ..globals
   ])
 }
@@ -105,26 +109,84 @@ pub fn render_page(page: Page) {
               attribute.src("/assets/background.png"),
               attribute.style("width", "100%"),
             ]),
+            html.h1(
+              [
+                attribute.styles([
+                  #("position", "absolute"),
+                  #("top", "-5px"),
+                  #("left", "100px"),
+                  #("text-shadow", "3px 3px 3px black"),
+                ]),
+              ],
+              [html.text("Ad Astra")],
+            ),
+            html.h2(
+              [
+                attribute.styles([
+                  #("position", "absolute"),
+                  #("top", "30px"),
+                  #("left", "97px"),
+                  #("text-shadow", "3px 3px 3px black"),
+                ]),
+              ],
+              [html.i([], [html.text("Volo Kaj Malplena")])],
+            ),
             html.img([
               attribute.src("/assets/logo.png"),
               attribute.style("top", "-102.5px"),
             ]),
           ]),
           html.span([attribute.class("toplinks")], [
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
             html.a([attribute.href("/")], [html.text("Home")]),
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
             html.a([attribute.href("/read")], [html.text("Read")]),
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
             html.a([attribute.href("/play")], [html.text("Play")]),
-            html.a([attribute.href("/apply")], [html.text("Apply")]),
+            //html.img([
+            //  attribute.src("/assets/symbolic.svg"),
+            //  attribute.class("charm"),
+            //]),
+            //html.a([attribute.href("/apply")], [html.text("Apply")]),
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
           ]),
         ]),
         html.div([attribute.class("content")], page.body),
         html.div([attribute.class("footer")], [
           html.div([attribute.class("bottomlinks")], [
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
             html.a([attribute.href("https://codeberg.org/ad-astra/homeserve")], [
               html.text("Source Code"),
             ]),
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
             html.a([attribute.href("/hoc")], [html.text("Volunteers")]),
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
             html.a([attribute.href("/privacy")], [html.text("Privacy Policy")]),
+            html.img([
+              attribute.src("/assets/symbolic.svg"),
+              attribute.class("charm"),
+            ]),
           ]),
           html.div([attribute.class("banner")], [
             html.img([

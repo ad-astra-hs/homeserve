@@ -25,12 +25,12 @@ pub fn build_privacy_policy() -> base.Page {
       ]),
       html.p([], [
         html.text(
-          "When you use the \"Toggle Quirks\" button, we store exactly one cookie, called \"quirked\" with a simple base64-encoded boolean value. This cookie is used only to remember your choice about rendering character quirks, and to control whether they are rendered.",
+          "When you use the \"Quirks\" or \"Animations\" buttons, we store exactly two cookies, called \"quirked\", and \"animated\", each with a simple base64-encoded boolean value. These cookies are used only to remember your choices about rendering either character quirks or static images (as opposed to animated gifs).",
         ),
       ]),
       html.p([], [
         html.text(
-          "This cookie is not used for tracking, analytics, or advertising. You can delete this cookie at any time via your browser settings. It is only set if you press the \"Toggle Quirks\" button.",
+          "These cookies are not used for tracking, analytics, or advertising. You can delete these cookies at any time via your browser settings. They are only set if you press the relevant buttons.",
         ),
       ]),
       html.p([], [

@@ -1,5 +1,3 @@
-import homeserve/quirks
-
 @external(erlang, "Elixir.BBCode", "to_html")
 pub fn to_html(data: String) -> Result(String, String)
 
@@ -19,6 +17,7 @@ import sketch/css/media
 import sketch/css/transform
 
 import homeserve/base
+import homeserve/quirks
 import homeserve/pages/errors
 
 pub type Meta {
@@ -28,7 +27,7 @@ pub type Meta {
     media: Media,
     credits: Credits,
     css: List(String),
-    characters: List(String),
+    js: List(String),
     date: Int,
     draft: Bool,
   )
@@ -77,7 +76,7 @@ pub fn decode_meta(panel: Int) -> Result(Meta, json.DecodeError) {
     use media <- decode.field("media", media_decoder)
     use credits <- decode.field("credits", credits_decoder)
     use css <- decode.field("css", decode.list(decode.string))
-    use characters <- decode.field("characters", decode.list(decode.string))
+    use js <- decode.field("js", decode.list(decode.string))
     use date <- decode.field("date", decode.int)
     use draft <- decode.field("draft", decode.bool)
     decode.success(Meta(
@@ -86,7 +85,7 @@ pub fn decode_meta(panel: Int) -> Result(Meta, json.DecodeError) {
       media:,
       credits:,
       css:,
-      characters:,
+      js:,
       date:,
       draft:,
     ))
@@ -109,6 +108,8 @@ pub fn build_panel(
   metadata: Meta,
   parsed_page: String,
   next_page_text: Option(String),
+  quirked: Bool,
+  animated: Bool,
 ) -> base.Page {
   let head =
     [
@@ -132,7 +133,7 @@ pub fn build_panel(
           attribute.rel("stylesheet"),
         ])
       }),
-      list.map(metadata.characters, fn(js) {
+      list.map(metadata.js, fn(js) {
         html.script([attribute.src("/assets/misc/" <> js <> ".js")], "")
       }),
       [
@@ -206,6 +207,8 @@ pub fn build_panel(
       css.color("white"),
       css.width_("fit-content"),
       css.margin_bottom(length.pt(10)),
+      css.margin_left_("auto"),
+      css.margin_right_("auto"),
     ]),
     css.global("#volume_down", [
       css.padding_left(length.pt(5)),
@@ -239,7 +242,16 @@ pub fn build_panel(
           "image" ->
             html.img(
               list.append(
-                [attribute.src(metadata.media.url), attribute.class("panel")],
+                [
+                  attribute.src(
+                    metadata.media.url
+                    <> case animated {
+                      False -> "?animated=False"
+                      True -> ""
+                    }
+                  ),
+                  attribute.class("panel"),
+                ],
                 case metadata.media.alt {
                   Some(alt) -> [attribute.alt(alt), attribute.title(alt)]
                   None -> []
@@ -374,6 +386,7 @@ pub fn build_panel(
             0 -> element.none()
             _ ->
               html.sup([], [
+                html.br([]),
                 html.text("Music: "),
                 ..{
                   list.map(metadata.credits.musicians, fn(musician) {
@@ -411,18 +424,40 @@ pub fn build_panel(
               ),
               attribute.class("quirk_toggle"),
             ],
-            [html.text("Toggle Quirks")],
+            [
+              html.text(
+                "Quirks "
+                <> {
+                  case quirked {
+                    True -> "✓"
+                    False -> "✗"
+                  }
+                },
+              ),
+            ],
           ),
           html.wbr([attribute.style("margin", "5pt")]),
-          //TODO: Implement this and put it somewhere better that doesn't interfere with mobile layout
-          //html.button(
-          //  [
-          //    attribute.attribute("onclick", ""),
-          //    attribute.class("animation_toggle"),
-          //  ],
-          //  [html.text("Toggle Animations")],
-          //),
-          //html.wbr([attribute.style("margin", "5pt")]),
+          html.button(
+            [
+              attribute.attribute(
+                "onclick",
+                "fetch('/read/toggle_animations').then(()=>location.reload());",
+              ),
+              attribute.class("quirk_toggle"),
+            ],
+            [
+              html.text(
+                "Animations "
+                <> {
+                  case animated {
+                    True -> "✓"
+                    False -> "✗"
+                  }
+                },
+              ),
+            ],
+          ),
+          html.wbr([attribute.style("margin", "5pt")]),
           html.a([attribute.href("/read/1")], [html.text("Start Over")]),
           html.wbr([attribute.style("margin", "5pt")]),
           html.a(
@@ -437,7 +472,7 @@ pub fn build_panel(
   base.Page(head:, css:, body:)
 }
 
-pub fn render_panel(panel: Int, quirked_cookie: String) {
+pub fn render_panel(panel: Int, quirked_cookie: String, animated_cookie: String) {
   case simplifile.read("./pages/" <> int.to_string(panel) <> "/page.txt") {
     Ok(got_page) -> {
       let assert Ok(metadata) = decode_meta(panel)
@@ -454,11 +489,15 @@ pub fn render_panel(panel: Int, quirked_cookie: String) {
         "false" -> False
         _ -> True
       }
+      let animated = case animated_cookie {
+        "false" -> False
+        _ -> True
+      }
 
       let assert Ok(parsed_page) =
         to_html(quirks.parse_document(got_page, quirked))
 
-      build_panel(metadata, parsed_page, next_page_text)
+      build_panel(metadata, parsed_page, next_page_text, quirked, animated)
     }
     _ -> {
       errors.build_404()
