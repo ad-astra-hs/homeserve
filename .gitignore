@@ -1,5 +1,6 @@
 /.direnv
 /build
+homeserve.toml
 *.beam
 *.ez
 erl_crash.dump
@@ -12,5 +13,7 @@ erl_crash.dump
 !/priv/static/assets/background.png
 /priv/static/extra/*
 !/priv/static/extra/default.js
+!/priv/static/extra/audio_player.js
+!/priv/static/extra/details_open.js
 /priv/converted/*
 !/priv/converted/.gitkeep

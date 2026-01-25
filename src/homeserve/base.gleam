@@ -1,3 +1,5 @@
+import gleam/list
+
 import lustre/attribute
 import lustre/element
 import lustre/element/html
@@ -7,6 +9,9 @@ import sketch/css
 import sketch/css/length
 import sketch/css/media
 import sketch/css/transform
+import wisp
+
+// ---- Types ----
 
 pub type Page {
   Page(
@@ -16,69 +21,140 @@ pub type Page {
   )
 }
 
-fn stylesheet(globals: List(css.Global)) -> String {
-  let assert Ok(stylesheet) = sketch.stylesheet(sketch.Persistent)
+// ---- Constants ----
 
-  stylesheet
-  |> apply_globals([
-    css.global("body", [
-      css.background("grey"),
-      css.font_family("monospace"),
-      css.font_size(length.pt(10)),
-      css.margin(length.px(0)),
-    ]),
-    css.global(".center", [
-      css.position("absolute"),
-      css.left(length.percent(50)),
-      css.transform([transform.translate_x(length.percent(-50))]),
-      css.width(length.pt(750)),
-      css.min_height(length.pt(600)),
-      css.height_("auto"),
-      css.display("flex"),
-      css.flex_direction("column"),
-      css.background("lightgrey"),
-      css.media(media.max_width(length.px(768)), [
-        css.position("unset"),
-        css.left(length.percent(0)),
-        css.transform([]),
-        css.width(length.percent(100)),
-        css.height(length.percent(100)),
-      ]),
-    ]),
-    css.global(".header", [
-      css.width(length.percent(100)),
-      css.background("black"),
-      css.color("white"),
-      css.margin_bottom_("auto"),
-    ]),
-    css.global(".banner", [css.height(length.px(100))]),
-    css.global(".banner img", [
-      css.object_fit("cover"),
-      css.height(length.pt(73)),
-      css.object_position("right top"),
-      css.position("relative"),
-    ]),
-    css.global(".toplinks, .bottomlinks", [
-      css.display("flex"),
-      css.overflow_x("auto"),
-      css.width(length.percent(100)),
-      css.justify_content("space-evenly"),
-      css.align_items("center"),
-      css.padding(length.pt(2)),
-    ]),
-    css.global(".toplinks a, .bottomlinks a", [css.color("white")]),
-    css.global(".content", [
-      css.display("flex"),
-      css.flex_direction("row"),
-      css.media(media.max_width(length.px(768)), [css.flex_direction("column")]),
-    ]),
-    css.global(".footer", [css.background("black"), css.margin_top_("auto")]),
-    css.global(".charm", [
-      css.width(length.px(10)),
-      css.media(media.max_width(length.px(768)), [css.width(length.px(0))]),
-    ]),
-    ..globals
-  ])
+const background_image = "/assets/background.png"
+
+const logo_image = "/assets/logo.png"
+
+const charm_image = "/assets/symbolic.svg"
+
+// ---- Navigation ----
+
+type NavLink {
+  NavLink(href: String, text: String)
+}
+
+const top_links = [
+  NavLink("/", "Home"),
+  NavLink("/read", "Read"),
+  NavLink("/play", "Play"),
+]
+
+const bottom_links = [
+  NavLink("https://codeberg.org/ad-astra/homeserve", "Source Code"),
+  NavLink("/hoc", "Volunteers"),
+  NavLink("/privacy", "Privacy Policy"),
+]
+
+fn render_nav_links(links: List(NavLink)) -> List(vnode.Element(String)) {
+  let charm =
+    html.img([
+      attribute.src(charm_image),
+      attribute.class("charm"),
+      attribute.alt(""),
+    ])
+
+  links
+  |> list.flat_map(fn(link) {
+    [
+      charm,
+      html.a([attribute.href(link.href)], [html.text(link.text)]),
+    ]
+  })
+  |> list.append([charm])
+}
+
+// ---- Stylesheet ----
+
+fn stylesheet(globals: List(css.Global)) -> String {
+  case sketch.stylesheet(sketch.Persistent) {
+    Error(_) -> {
+      wisp.log_error("Failed to create sketch stylesheet")
+      ""
+    }
+    Ok(stylesheet) -> {
+      let base_globals = [
+        css.global("body", [
+          css.background("grey"),
+          css.font_family("monospace"),
+          css.font_size(length.pt(10)),
+          css.margin(length.px(0)),
+        ]),
+        css.global(".center", [
+          css.position("absolute"),
+          css.left(length.percent(50)),
+          css.transform([transform.translate_x(length.percent(-50))]),
+          css.width(length.pt(750)),
+          css.min_height(length.pt(600)),
+          css.height_("auto"),
+          css.display("flex"),
+          css.flex_direction("column"),
+          css.background("lightgrey"),
+          css.media(media.max_width(length.px(768)), [
+            css.position("unset"),
+            css.left(length.percent(0)),
+            css.transform([]),
+            css.width(length.percent(100)),
+            css.height(length.percent(100)),
+          ]),
+        ]),
+        css.global(".header", [
+          css.width(length.percent(100)),
+          css.background("black"),
+          css.color("white"),
+          css.margin_bottom_("auto"),
+        ]),
+        css.global(".banner", [css.height(length.px(100))]),
+        css.global(".banner img", [
+          css.object_fit("cover"),
+          css.height(length.pt(73)),
+          css.object_position("right top"),
+          css.position("relative"),
+        ]),
+        css.global(".banner-title", [
+          css.position("absolute"),
+          css.top(length.px(-5)),
+          css.left(length.px(100)),
+          css.property("text-shadow", "3px 3px 3px black"),
+        ]),
+        css.global(".banner-subtitle", [
+          css.position("absolute"),
+          css.top(length.px(30)),
+          css.left(length.px(97)),
+          css.property("text-shadow", "3px 3px 3px black"),
+        ]),
+        css.global(".banner-logo", [
+          css.position("relative"),
+          css.top(length.px(-102)),
+        ]),
+        css.global(".toplinks, .bottomlinks", [
+          css.display("flex"),
+          css.overflow_x("auto"),
+          css.width(length.percent(100)),
+          css.justify_content("space-evenly"),
+          css.align_items("center"),
+          css.padding(length.pt(2)),
+        ]),
+        css.global(".toplinks a, .bottomlinks a", [css.color("white")]),
+        css.global(".content", [
+          css.display("flex"),
+          css.flex_direction("row"),
+          css.media(media.max_width(length.px(768)), [
+            css.flex_direction("column"),
+          ]),
+        ]),
+        css.global(".footer", [css.background("black"), css.margin_top_("auto")]),
+        css.global(".charm", [
+          css.width(length.px(10)),
+          css.media(media.max_width(length.px(768)), [css.width(length.px(0))]),
+        ]),
+      ]
+
+      stylesheet
+      |> apply_globals(list.append(base_globals, globals))
+    }
+  }
 }
 
 fn apply_globals(
@@ -91,7 +167,46 @@ fn apply_globals(
   }
 }
 
+// ---- Page rendering ----
+
+fn render_header() -> vnode.Element(String) {
+  html.div([attribute.class("header")], [
+    html.div([attribute.class("banner")], [
+      html.img([
+        attribute.src(background_image),
+        attribute.style("width", "100%"),
+        attribute.alt(""),
+      ]),
+      html.h1([attribute.class("banner-title")], [html.text("Ad Astra")]),
+      html.h2([attribute.class("banner-subtitle")], [
+        html.i([], [html.text("Volo Kaj Malplena")]),
+      ]),
+      html.img([
+        attribute.src(logo_image),
+        attribute.class("banner-logo"),
+        attribute.alt("Ad Astra logo"),
+      ]),
+    ]),
+    html.span([attribute.class("toplinks")], render_nav_links(top_links)),
+  ])
+}
+
+fn render_footer() -> vnode.Element(String) {
+  html.div([attribute.class("footer")], [
+    html.div([attribute.class("bottomlinks")], render_nav_links(bottom_links)),
+    html.div([attribute.class("banner")], [
+      html.img([
+        attribute.src(background_image),
+        attribute.style("width", "100%"),
+        attribute.alt(""),
+      ]),
+    ]),
+  ])
+}
+
 pub fn render_page(page: Page) {
+  wisp.log_debug("Rendering page")
+
   html.html([attribute.lang("en")], [
     html.head([], [
       html.style([], stylesheet(page.css)),
@@ -103,98 +218,9 @@ pub fn render_page(page: Page) {
     ]),
     html.body([], [
       html.div([attribute.class("center")], [
-        html.div([attribute.class("header")], [
-          html.div([attribute.class("banner")], [
-            html.img([
-              attribute.src("/assets/background.png"),
-              attribute.style("width", "100%"),
-            ]),
-            html.h1(
-              [
-                attribute.styles([
-                  #("position", "absolute"),
-                  #("top", "-5px"),
-                  #("left", "100px"),
-                  #("text-shadow", "3px 3px 3px black"),
-                ]),
-              ],
-              [html.text("Ad Astra")],
-            ),
-            html.h2(
-              [
-                attribute.styles([
-                  #("position", "absolute"),
-                  #("top", "30px"),
-                  #("left", "97px"),
-                  #("text-shadow", "3px 3px 3px black"),
-                ]),
-              ],
-              [html.i([], [html.text("Volo Kaj Malplena")])],
-            ),
-            html.img([
-              attribute.src("/assets/logo.png"),
-              attribute.style("top", "-102.5px"),
-            ]),
-          ]),
-          html.span([attribute.class("toplinks")], [
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-            html.a([attribute.href("/")], [html.text("Home")]),
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-            html.a([attribute.href("/read")], [html.text("Read")]),
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-            html.a([attribute.href("/play")], [html.text("Play")]),
-            //html.img([
-            //  attribute.src("/assets/symbolic.svg"),
-            //  attribute.class("charm"),
-            //]),
-            //html.a([attribute.href("/apply")], [html.text("Apply")]),
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-          ]),
-        ]),
+        render_header(),
         html.div([attribute.class("content")], page.body),
-        html.div([attribute.class("footer")], [
-          html.div([attribute.class("bottomlinks")], [
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-            html.a([attribute.href("https://codeberg.org/ad-astra/homeserve")], [
-              html.text("Source Code"),
-            ]),
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-            html.a([attribute.href("/hoc")], [html.text("Volunteers")]),
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-            html.a([attribute.href("/privacy")], [html.text("Privacy Policy")]),
-            html.img([
-              attribute.src("/assets/symbolic.svg"),
-              attribute.class("charm"),
-            ]),
-          ]),
-          html.div([attribute.class("banner")], [
-            html.img([
-              attribute.src("/assets/background.png"),
-              attribute.style("width", "100%"),
-            ]),
-          ]),
-        ]),
+        render_footer(),
       ]),
     ]),
   ])

@@ -1,0 +1,26 @@
+# Homeserve Configuration
+# This file configures the Homeserve web server.
+# All values shown are defaults - uncomment and modify as needed.
+
+[server]
+# The port to listen on
+port = 8000
+
+# The host/IP address to bind to
+# Use "0.0.0.0" to listen on all interfaces
+# Use "127.0.0.1" for localhost only
+host = "0.0.0.0"
+
+[cache]
+# How long to cache panel metadata before reloading from disk (in minutes)
+ttl_minutes = 60
+
+# How often to check for file changes (in seconds)
+watch_interval_seconds = 5
+
+[paths]
+# Directory containing panel markdown files (e.g., 1.md, 2.md, etc.)
+pages_directory = "./pages"
+
+# Directory containing static assets (images, audio, etc.)
+assets_directory = "./priv/static/assets"

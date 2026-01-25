@@ -5,6 +5,14 @@ import sketch/css/length
 
 import homeserve/base
 
+/// Builds the privacy policy page with current, comprehensive privacy information.
+/// 
+/// The policy covers data collection (none), cookie usage (functional only),
+/// user rights, legal compliance, and contact information.
+/// 
+/// # Returns
+/// 
+/// Complete privacy policy page with modern styling
 pub fn build_privacy_policy() -> base.Page {
   let head = [html.title([], "Privacy Policy")]
   let css = [
@@ -19,34 +27,55 @@ pub fn build_privacy_policy() -> base.Page {
     html.div([attribute.class("dead_center")], [
       html.h1([], [html.text("Privacy Policy")]),
       html.p([], [
+        html.text("Last updated: January 2026"),
+      ]),
+      html.h2([], [html.text("Data Collection")]),
+      html.p([], [
         html.text(
-          "We do not store or process any of your data. Our Webserver (Caddy) does not log your IP address or any other identifying information.",
+          "We do not collect, store, or process any personal data. Our web server does not log IP addresses or other identifying information.",
         ),
+      ]),
+      html.h2([], [html.text("Cookies")]),
+      html.p([], [
+        html.text("We use two optional functional cookies:"),
+      ]),
+      html.ul([], [
+        html.li([], [
+          html.text("quirked: Remembers character quirk preferences"),
+        ]),
+        html.li([], [html.text("animated: Remembers animation settings")]),
       ]),
       html.p([], [
         html.text(
-          "When you use the \"Quirks\" or \"Animations\" buttons, we store exactly two cookies, called \"quirked\", and \"animated\", each with a simple base64-encoded boolean value. These cookies are used only to remember your choices about rendering either character quirks or static images (as opposed to animated gifs).",
+          "These cookies contain only boolean values and are set only when you click the respective toggle buttons. They are not used for tracking, analytics, or advertising.",
         ),
       ]),
+      html.h2([], [html.text("Your Rights")]),
+      html.ul([], [
+        html.li([], [
+          html.text("Access: You know exactly what data we collect (none)"),
+        ]),
+        html.li([], [
+          html.text("Control: Cookies are optional and can be deleted anytime"),
+        ]),
+        html.li([], [html.text("Contact: Reach us with privacy questions")]),
+      ]),
+      html.h2([], [html.text("Legal Compliance")]),
       html.p([], [
         html.text(
-          "These cookies are not used for tracking, analytics, or advertising. You can delete these cookies at any time via your browser settings. They are only set if you press the relevant buttons.",
+          "We comply with applicable privacy laws including GDPR and PECR. Our minimal data collection approach naturally respects privacy by design.",
         ),
       ]),
+      html.h2([], [html.text("Contact")]),
       html.p([], [
-        html.text(
-          "You have the right to know what data we collect (none) and to contact us with any privacy concerns (also hopefully none).",
-        ),
-      ]),
-      html.p([], [
-        html.text(
-          "If you have any concerns regarding your privacy, please email ",
-        ),
+        html.text("For privacy concerns: "),
         html.a([attribute.href("mailto:michal@adastra.wtf")], [
           html.text("michal@adastra.wtf"),
         ]),
+      ]),
+      html.p([], [
         html.text(
-          ". We strive to comply with all relevant privacy laws, including the GDPR and PECR.",
+          "This policy may be updated as needed. Changes will be reflected here.",
         ),
       ]),
     ]),
