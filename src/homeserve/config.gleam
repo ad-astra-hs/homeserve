@@ -26,7 +26,11 @@ pub type CacheConfig {
 
 /// Path-related configuration.
 pub type PathsConfig {
-  PathsConfig(pages_directory: String, assets_directory: String)
+  PathsConfig(
+    pages_directory: String,
+    assets_directory: String,
+    extra_directory: String,
+  )
 }
 
 /// Errors that can occur when loading configuration.
@@ -53,34 +57,36 @@ const default_pages_directory = "./pages"
 
 const default_assets_directory = "./priv/static/assets"
 
+const default_extra_directory = "./priv/static/extra"
+
 // ---- Public API ----
 
 /// Loads configuration from the default path (homeserve.toml).
 /// Loads configuration from the default config file path.
-/// 
+///
 /// Attempts to load `homeserve.toml` from the current directory.
 /// If the file doesn't exist or contains errors, falls back to default values.
 /// Logs the configuration that was actually used (loaded or defaults).
-/// 
+///
 /// # Returns
-/// 
+///
 /// Complete application configuration
 pub fn load() -> Config {
   load_from(default_config_path)
 }
 
 /// Loads configuration from a specific TOML file path.
-/// 
+///
 /// Attempts to parse and validate the configuration file.
 /// If the file doesn't exist or contains errors, falls back to default values.
 /// Logs the configuration that was actually used (loaded or defaults).
-/// 
+///
 /// # Parameters
-/// 
+///
 /// - `path`: Path to the TOML configuration file
-/// 
+///
 /// # Returns
-/// 
+///
 /// Complete application configuration
 pub fn load_from(path: String) -> Config {
   case load_from_file(path) {
@@ -121,6 +127,7 @@ pub fn default_config() -> Config {
     paths: PathsConfig(
       pages_directory: default_pages_directory,
       assets_directory: default_assets_directory,
+      extra_directory: default_extra_directory,
     ),
   )
 }
@@ -186,6 +193,12 @@ fn parse_config(
       ["paths", "assets_directory"],
       defaults.paths.assets_directory,
     )
+  let extra_dir =
+    get_string_or_default(
+      toml,
+      ["paths", "extra_directory"],
+      defaults.paths.extra_directory,
+    )
 
   Ok(Config(
     server: ServerConfig(port: server_port, host: server_host),
@@ -193,7 +206,11 @@ fn parse_config(
       ttl_minutes: cache_ttl,
       watch_interval_seconds: watch_interval,
     ),
-    paths: PathsConfig(pages_directory: pages_dir, assets_directory: assets_dir),
+    paths: PathsConfig(
+      pages_directory: pages_dir,
+      assets_directory: assets_dir,
+      extra_directory: extra_dir,
+    ),
   ))
 }
 

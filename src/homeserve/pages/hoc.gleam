@@ -55,15 +55,6 @@ type Hoc {
 
 // ---- ContributionType helpers ----
 
-fn contribution_type_to_string(t: ContributionType) -> String {
-  case t {
-    Art -> "Artists"
-    Writing -> "Writers"
-    Music -> "Musicians"
-    Misc -> "Misc."
-  }
-}
-
 fn contribution_type_rank(t: ContributionType) -> Int {
   case t {
     Art -> 0
@@ -166,11 +157,23 @@ fn get_contributor_info(
   }
 }
 
+// ---- Helper functions ----
+
+fn get_section_contributors(
+  hoc: Hoc,
+  section_type: ContributionType,
+) -> List(String) {
+  case list.find(hoc.sections, fn(section) { section.0 == section_type }) {
+    Ok(found_section) -> found_section.1
+    Error(_) -> []
+  }
+}
+
 // ---- Rendering helpers ----
 
 fn render_section(title: String, contributors: List(String)) {
   html.div([attribute.class("section")], [
-    html.h2([], [html.text(title)]),
+    html.h3([], [html.text(title)]),
     html.ul(
       [],
       list.map(contributors, fn(name) {
@@ -239,19 +242,30 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
   let css = [
     css.global(".section", [
       css.background(section_bg),
-      css.flex("1"),
-      css.height(length.percent(100)),
-      css.margin(length.pt(10)),
-      css.padding(length.pt_(2.5)),
+      css.height_("auto"),
+      css.padding(length.pt(10)),
     ]),
     css.global(".title", [
       css.width(length.percent(100)),
       css.text_align("center"),
+      css.margin_bottom(length.pt(20)),
+    ]),
+    css.global(".section h3", [
+      css.margin_top(length.px(0)),
+      css.margin_bottom(length.pt(10)),
+      css.color("#333333"),
+    ]),
+    css.global(".section ul", [
+      css.margin(length.px(0)),
+      css.padding_left(length.pt(15)),
+      css.list_style("disc"),
     ]),
     css.global(".sections", [
-      css.display("flex"),
-      css.flex_direction("column"),
-      css.min_height(length.vh(100)),
+      css.display("grid"),
+      css.grid_template_columns("1fr 1fr 1fr"),
+      css.grid_template_rows("auto auto"),
+      css.gap(length.pt(10)),
+      css.padding(length.pt(10)),
       css.height_("auto"),
     ]),
     css.global(".content", [css.min_height_("inherit")]),
@@ -261,12 +275,16 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
     html.div([attribute.class("title")], [
       html.h1([], [html.text("The Hall of Contributors")]),
     ]),
-    html.div(
-      [attribute.class("sections")],
-      list.map(hoc.sections, fn(section) {
-        render_section(contribution_type_to_string(section.0), section.1)
-      }),
-    ),
+    html.div([attribute.class("sections")], [
+      // Artists section - spans all 3 columns at top
+      html.div([attribute.style("grid-column", "1 / -1")], [
+        render_section("Artists", get_section_contributors(hoc, Art)),
+      ]),
+      // Other three sections - equally spaced below
+      render_section("Writers", get_section_contributors(hoc, Writing)),
+      render_section("Musicians", get_section_contributors(hoc, Music)),
+      render_section("Misc.", get_section_contributors(hoc, Misc)),
+    ]),
   ]
 
   base.Page(head:, css:, body:)

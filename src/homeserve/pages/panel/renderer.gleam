@@ -6,7 +6,10 @@
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
+import gleam/string
 import gleam/uri
+
 import lustre/attribute
 import lustre/element
 import lustre/element/html
@@ -108,7 +111,14 @@ pub fn render_audio_player(track: Option(String)) {
     Some(track_name) ->
       element.fragment([
         html.span([attribute.class("audio_controls")], [
-          html.text("🕪 \"" <> track_name <> "\" "),
+          html.text(
+            "🕪 \""
+            <> track_name
+            |> string.split(".")
+            |> list.first
+            |> result.unwrap("Unknown Track")
+            <> "\" ",
+          ),
           html.button([attribute.id("play_pause"), attribute.class("music")], [
             html.text("Play"),
           ]),
@@ -247,13 +257,10 @@ pub fn build_css() -> List(css.Global) {
       css.margin_top(length.pt(0)),
       css.padding(length.pt(3)),
       css.padding_right(length.pt(6)),
-      css.padding_bottom(length.pt(0)),
       css.background("black"),
       css.color("white"),
       css.width_("fit-content"),
       css.margin_bottom(length.pt(10)),
-      css.margin_left_("auto"),
-      css.margin_right_("auto"),
     ]),
     css.global("#volume_down", [
       css.padding_left(length.pt(5)),

@@ -23,9 +23,9 @@ pub type Page {
 
 // ---- Constants ----
 
-const background_image = "/assets/background.png"
+const top_banner_image = "/assets/top_banner.png"
 
-const logo_image = "/assets/logo.png"
+const bottom_banner_image = "/assets/bottom_banner.png"
 
 const charm_image = "/assets/symbolic.svg"
 
@@ -105,28 +105,17 @@ fn stylesheet(globals: List(css.Global)) -> String {
           css.color("white"),
           css.margin_bottom_("auto"),
         ]),
-        css.global(".banner", [css.height(length.px(100))]),
-        css.global(".banner img", [
-          css.object_fit("cover"),
-          css.height(length.pt(73)),
-          css.object_position("right top"),
-          css.position("relative"),
+        css.global(".banner", [
+          css.height(length.px(100)),
+          css.max_width(length.px(1000)),
+          css.background_size("cover"),
+          css.background_position("center"),
         ]),
-        css.global(".banner-title", [
-          css.position("absolute"),
-          css.top(length.px(-5)),
-          css.left(length.px(100)),
-          css.property("text-shadow", "3px 3px 3px black"),
+        css.global(".top-banner", [
+          css.background_image("url('" <> top_banner_image <> "')"),
         ]),
-        css.global(".banner-subtitle", [
-          css.position("absolute"),
-          css.top(length.px(30)),
-          css.left(length.px(97)),
-          css.property("text-shadow", "3px 3px 3px black"),
-        ]),
-        css.global(".banner-logo", [
-          css.position("relative"),
-          css.top(length.px(-102)),
+        css.global(".bottom-banner", [
+          css.background_image("url('" <> bottom_banner_image <> "')"),
         ]),
         css.global(".toplinks, .bottomlinks", [
           css.display("flex"),
@@ -171,22 +160,7 @@ fn apply_globals(
 
 fn render_header() -> vnode.Element(String) {
   html.div([attribute.class("header")], [
-    html.div([attribute.class("banner")], [
-      html.img([
-        attribute.src(background_image),
-        attribute.style("width", "100%"),
-        attribute.alt(""),
-      ]),
-      html.h1([attribute.class("banner-title")], [html.text("Ad Astra")]),
-      html.h2([attribute.class("banner-subtitle")], [
-        html.i([], [html.text("Volo Kaj Malplena")]),
-      ]),
-      html.img([
-        attribute.src(logo_image),
-        attribute.class("banner-logo"),
-        attribute.alt("Ad Astra logo"),
-      ]),
-    ]),
+    html.div([attribute.class("banner top-banner")], []),
     html.span([attribute.class("toplinks")], render_nav_links(top_links)),
   ])
 }
@@ -194,13 +168,7 @@ fn render_header() -> vnode.Element(String) {
 fn render_footer() -> vnode.Element(String) {
   html.div([attribute.class("footer")], [
     html.div([attribute.class("bottomlinks")], render_nav_links(bottom_links)),
-    html.div([attribute.class("banner")], [
-      html.img([
-        attribute.src(background_image),
-        attribute.style("width", "100%"),
-        attribute.alt(""),
-      ]),
-    ]),
+    html.div([attribute.class("banner bottom-banner")], []),
   ])
 }
 

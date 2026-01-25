@@ -1,5 +1,7 @@
 import gleam/int
 import gleam/list
+import gleam/option.{None, Some}
+import gleam/uri
 
 import lustre/attribute
 import lustre/element/html
@@ -98,6 +100,11 @@ fn render_about_section() {
         "If you're looking to get involved, feel free to join our Discord, where you'll hear first whenever we open applications in the future.",
       ),
     ]),
+    html.p([], [
+      html.text(
+        "Ad Astra Team is committed to open-source development and welcomes contributions from the community. This website is open source and welcomes improvements, criticism, and feedback.",
+      ),
+    ]),
   ])
 }
 
@@ -133,6 +140,50 @@ fn render_panel_link(page: panel.Meta) {
   ])
 }
 
+fn render_contributor_section(panels: List(panel.Meta)) {
+  case get_random_contributor(panels) {
+    None -> html.div([], [])
+    Some(contributor) ->
+      html.div([attribute.class("contributor")], [
+        html.h2([attribute.style("text-align", "center")], [
+          html.text("Featured Contributor"),
+        ]),
+        html.p([attribute.style("text-align", "center")], [
+          html.text("Check out the work of "),
+          html.a([attribute.href("/hoc/" <> uri.percent_encode(contributor))], [
+            html.text(contributor),
+          ]),
+          html.text("!"),
+        ]),
+      ])
+  }
+}
+
+fn get_random_contributor(panels: List(panel.Meta)) -> option.Option(String) {
+  let all_contributors =
+    panels
+    |> list.flat_map(fn(panel) {
+      list.flatten([
+        panel.credits.artists,
+        panel.credits.writers,
+        panel.credits.musicians,
+        panel.credits.misc,
+      ])
+    })
+    |> list.unique
+
+  case all_contributors {
+    [] -> None
+    _ -> {
+      let random_index = int.random(list.length(all_contributors) - 1)
+      case list.drop(all_contributors, random_index) {
+        [] -> None
+        [contributor, ..] -> Some(contributor)
+      }
+    }
+  }
+}
+
 // ---- Page builder ----
 
 pub fn build_home(panels: List(panel.Meta)) -> base.Page {
@@ -161,7 +212,7 @@ pub fn build_home(panels: List(panel.Meta)) -> base.Page {
       css.width_("auto"),
       css.media(media.max_width(length.px(768)), [css.flex("auto")]),
     ]),
-    css.global(".panels, .socials, .about", [
+    css.global(".panels, .socials, .about, .contributor", [
       css.background(section_bg),
       css.margin(length.pt(10)),
       css.padding(length.pt(10)),
@@ -184,7 +235,10 @@ pub fn build_home(panels: List(panel.Meta)) -> base.Page {
   ]
 
   let body = [
-    html.div([attribute.class("content_left")], [render_about_section()]),
+    html.div([attribute.class("content_left")], [
+      render_about_section(),
+      render_contributor_section(panels),
+    ]),
     html.div([attribute.class("content_right")], [
       html.div(
         [attribute.class("socials")],
