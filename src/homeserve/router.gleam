@@ -6,6 +6,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
+import gleam/string_tree
 import gleam/uri
 import homeserve/base
 import homeserve/config.{type Config}
@@ -163,6 +164,16 @@ fn serve_privacy_policy(req: Request) -> Response {
 
   wisp.ok()
   |> wisp.html_body(base.render_page(privacy_policy.build_privacy_policy()))
+}
+
+fn serve_health(req: Request) -> Response {
+  use <- wisp.require_method(req, Get)
+
+  let json_body = "{\"status\": \"ok\"}" |> string_tree.from_string
+
+  wisp.ok()
+  |> wisp.set_header("content-type", "application/json")
+  |> wisp.set_body(wisp.Text(json_body))
 }
 
 // ---- Asset handling ----
