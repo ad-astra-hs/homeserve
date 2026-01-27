@@ -83,6 +83,10 @@ fn unique_contributors(panels: List(panel.Meta)) -> Hoc {
   ])
 }
 
+fn get_site_contributors(panels: List(panel.Meta)) -> List(panel.Meta) {
+  list.filter(panels, fn(p) { p.index == 0 })
+}
+
 fn get_all_contributions(panels: List(panel.Meta)) -> List(Contribution) {
   panels
   |> list.flat_map(fn(meta) {
@@ -222,6 +226,7 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
   wisp.log_debug("Building Hall of Contributors page")
 
   let hoc = unique_contributors(panels)
+  let site_contributors = get_site_contributors(panels)
 
   let total_contributors =
     hoc.sections
@@ -233,8 +238,8 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
     "Hall of Contributors: "
     <> int.to_string(total_contributors)
     <> " unique contributors across "
-    <> int.to_string(list.length(panels))
-    <> " panels",
+    <> int.to_string(list.length(panels) - list.length(site_contributors))
+    <> " content panels",
   )
 
   let head = [html.title([], "The Hall of Contributors")]
@@ -245,6 +250,7 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
       css.height_("auto"),
       css.padding(length.pt(10)),
     ]),
+
     css.global(".title", [
       css.width(length.percent(100)),
       css.text_align("center"),
@@ -260,30 +266,85 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
       css.padding_left(length.pt(15)),
       css.list_style("disc"),
     ]),
+    css.global(".title", [
+      css.width(length.percent(100)),
+      css.text_align("center"),
+      css.margin_bottom(length.pt(20)),
+    ]),
+    css.global(".content", [
+      css.flex_direction("column"),
+      css.flex("1"),
+    ]),
     css.global(".sections", [
       css.display("grid"),
       css.grid_template_columns("1fr 1fr 1fr"),
-      css.grid_template_rows("auto auto"),
+      css.grid_template_rows("auto auto auto"),
       css.gap(length.pt(10)),
       css.padding(length.pt(10)),
       css.height_("auto"),
     ]),
-    css.global(".content", [css.min_height_("inherit")]),
+    css.global(".title", [
+      css.width(length.percent(100)),
+      css.text_align("center"),
+      css.margin_bottom(length.pt(20)),
+    ]),
   ]
 
-  let body = [
-    html.div([attribute.class("title")], [
-      html.h1([], [html.text("The Hall of Contributors")]),
+  let site_section = case site_contributors {
+    [] -> []
+    _ -> [
+      html.div(
+        [
+          attribute.class("section"),
+          attribute.style("grid-column", "1 / -1"),
+        ],
+        [
+          html.h3([], [html.text("🏗️ Site Contributors")]),
+          html.p([], [
+            html.text(
+              "Special thanks to those who help build and maintain the Homeserve platform itself.",
+            ),
+          ]),
+          html.div(
+            [],
+            list.map(site_contributors, fn(panel) {
+              html.div([], [
+                html.h3([], [html.text(panel.title)]),
+                html.p([], [
+                  html.text(
+                    "Development, infrastructure, design, and community support",
+                  ),
+                ]),
+              ])
+            }),
+          ),
+        ],
+      ),
+    ]
+  }
+
+  let sections_content = [
+    // Artists section - spans all 3 columns at top
+    html.div([attribute.style("grid-column", "1 / -1")], [
+      render_section("Artists", get_section_contributors(hoc, Art)),
     ]),
+    // Other three sections - equally spaced below
+    render_section("Writers", get_section_contributors(hoc, Writing)),
+    render_section("Musicians", get_section_contributors(hoc, Music)),
+    render_section("Misc.", get_section_contributors(hoc, Misc)),
+  ]
+
+  let sections_with_site = list.append(sections_content, site_section)
+
+  let body = [
     html.div([attribute.class("sections")], [
-      // Artists section - spans all 3 columns at top
-      html.div([attribute.style("grid-column", "1 / -1")], [
-        render_section("Artists", get_section_contributors(hoc, Art)),
-      ]),
-      // Other three sections - equally spaced below
-      render_section("Writers", get_section_contributors(hoc, Writing)),
-      render_section("Musicians", get_section_contributors(hoc, Music)),
-      render_section("Misc.", get_section_contributors(hoc, Misc)),
+      html.div(
+        [attribute.class("title"), attribute.style("grid-column", "1 / -1")],
+        [
+          html.h1([], [html.text("The Hall of Contributors")]),
+        ],
+      ),
+      ..sections_with_site
     ]),
   ]
 

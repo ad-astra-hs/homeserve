@@ -16,6 +16,7 @@ import homeserve/pages/panel
 import homeserve/pages/privacy_policy
 import homeserve/panel_cache
 import homeserve/web
+import simplifile
 import wisp.{type Request, type Response}
 
 // ---- Constants ----
@@ -54,7 +55,7 @@ pub fn handle_request(
       wisp.redirect("https://gitlab.com/ad-astra-hs/friendsim/build-system")
 
     // Webcomic
-    ["read"] | ["read", "0"] -> wisp.redirect("/read/1")
+    ["read"] -> wisp.redirect("/read/1")
     ["read", "toggle_quirks"] -> toggle_a11y(req, "quirked")
     ["read", "toggle_animations"] -> toggle_a11y(req, "animated")
     ["read", page] -> serve_panel_by_page(req, page, cfg)
@@ -183,17 +184,28 @@ fn serve_asset_unchecked(req: Request, asset: String, cfg: Config) -> Response {
   let path = case is_gif, animated {
     True, False -> {
       let base = string.drop_end(asset, 4)
-      base <> "_static.jpg"
+      base <> "_static.png"
     }
     _, _ -> asset
   }
 
-  wisp.ok()
-  |> wisp.set_header("cache-control", "public, max-age=604800")
-  |> web.file_with_mime(
-    [cfg.paths.assets_directory, path]
-    |> string.join("/"),
-  )
+  let full_path = [cfg.paths.assets_directory, path] |> string.join("/")
+
+  case simplifile.is_file(full_path) {
+    Ok(True) -> {
+      wisp.ok()
+      |> wisp.set_header("cache-control", "public, max-age=604800")
+      |> web.file_with_mime(full_path)
+    }
+    Ok(False) -> {
+      wisp.log_info("Asset not found: " <> full_path)
+      serve_404(req)
+    }
+    Error(_) -> {
+      wisp.log_error("Failed to check if asset exists: " <> full_path)
+      serve_404(req)
+    }
+  }
 }
 
 fn is_animation_requested(req: Request) -> Bool {
@@ -216,11 +228,22 @@ fn serve_extra(req: Request, extra: String, cfg: Config) -> Response {
       serve_404(req)
     }
     False -> {
-      wisp.ok()
-      |> web.file_with_mime(
-        [cfg.paths.extra_directory, extra]
-        |> string.join("/"),
-      )
+      let full_path = [cfg.paths.extra_directory, extra] |> string.join("/")
+
+      case simplifile.is_file(full_path) {
+        Ok(True) -> {
+          wisp.ok()
+          |> web.file_with_mime(full_path)
+        }
+        Ok(False) -> {
+          wisp.log_info("Extra asset not found: " <> full_path)
+          serve_404(req)
+        }
+        Error(_) -> {
+          wisp.log_error("Failed to check if extra asset exists: " <> full_path)
+          serve_404(req)
+        }
+      }
     }
   }
 }

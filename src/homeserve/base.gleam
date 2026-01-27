@@ -76,27 +76,29 @@ fn stylesheet(globals: List(css.Global)) -> String {
     Ok(stylesheet) -> {
       let base_globals = [
         css.global("body", [
-          css.background("grey"),
+          css.background_image("url('/assets/background.png');"),
           css.font_family("monospace"),
           css.font_size(length.pt(10)),
           css.margin(length.px(0)),
+          css.height(length.percent(100)),
+          css.min_height(length.vh(100)),
         ]),
         css.global(".center", [
           css.position("absolute"),
           css.left(length.percent(50)),
           css.transform([transform.translate_x(length.percent(-50))]),
           css.width(length.pt(750)),
-          css.min_height(length.pt(600)),
-          css.height_("auto"),
+          css.min_height(length.vh(100)),
           css.display("flex"),
           css.flex_direction("column"),
           css.background("lightgrey"),
+          css.top(length.px(0)),
           css.media(media.max_width(length.px(768)), [
             css.position("unset"),
             css.left(length.percent(0)),
             css.transform([]),
             css.width(length.percent(100)),
-            css.height(length.percent(100)),
+            css.top(length.px(0)),
           ]),
         ]),
         css.global(".header", [
@@ -127,8 +129,10 @@ fn stylesheet(globals: List(css.Global)) -> String {
         ]),
         css.global(".toplinks a, .bottomlinks a", [css.color("white")]),
         css.global(".content", [
+          css.min_height_("100%"),
           css.display("flex"),
           css.flex_direction("row"),
+          css.flex("1"),
           css.media(media.max_width(length.px(768)), [
             css.flex_direction("column"),
           ]),
@@ -182,6 +186,7 @@ pub fn render_page(page: Page) {
         attribute.name("viewport"),
         attribute.content("width=device-width, initial-scale=1.0"),
       ]),
+      html.link([attribute.rel("icon"), attribute.href("/assets/logo.png")]),
       ..page.head
     ]),
     html.body([], [

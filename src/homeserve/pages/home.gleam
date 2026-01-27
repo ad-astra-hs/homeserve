@@ -112,6 +112,7 @@ fn render_recent_panels(panels: List(panel.Meta)) {
   let recent_panels =
     panels
     |> list.filter(fn(page) { !page.draft })
+    |> list.filter(fn(page) { page.index != 0 })
     |> list.sort(fn(a, b) { int.compare(b.date, a.date) })
     |> list.take(15)
 
@@ -135,7 +136,7 @@ fn render_panel_link(page: panel.Meta) {
 
   html.li([], [
     html.a([attribute.href("/read/" <> int.to_string(page.index))], [
-      html.text("[" <> date_str <> "] " <> page.title),
+      html.text("[" <> date_str <> "] > " <> page.title),
     ]),
   ])
 }
@@ -212,7 +213,7 @@ pub fn build_home(panels: List(panel.Meta)) -> base.Page {
       css.width_("auto"),
       css.media(media.max_width(length.px(768)), [css.flex("auto")]),
     ]),
-    css.global(".panels, .socials, .about, .contributor", [
+    css.global(".panels, .socials, .about, .contributor, .evil_monkey", [
       css.background(section_bg),
       css.margin(length.pt(10)),
       css.padding(length.pt(10)),
@@ -238,6 +239,12 @@ pub fn build_home(panels: List(panel.Meta)) -> base.Page {
     html.div([attribute.class("content_left")], [
       render_about_section(),
       render_contributor_section(panels),
+      html.div([attribute.class("evil_monkey")], [
+        html.img([
+          attribute.src("/assets/evil_monkey.png"),
+          attribute.styles([#("width", "100%"), #("height", "auto")]),
+        ]),
+      ]),
     ]),
     html.div([attribute.class("content_right")], [
       html.div(

@@ -136,6 +136,7 @@ pub fn render_audio_player(track: Option(String)) {
             attribute.class("music"),
             attribute.id("audio"),
             attribute.src("/assets/" <> track_name),
+            attribute.loop(True),
           ],
           [html.text("Audio is not supported in this browser")],
         ),
@@ -208,6 +209,7 @@ pub fn build_css() -> List(css.Global) {
     css.global(".page_outer", [
       css.display("flex"),
       css.flex_direction("column"),
+      css.height_("100%"),
       css.background("white"),
     ]),
     css.global(".page_outer h2", [css.text_align("center")]),
@@ -218,6 +220,7 @@ pub fn build_css() -> List(css.Global) {
       css.text_align("center"),
       css.margin(length.pt(10)),
       css.margin_bottom(length.rlh(1.0)),
+      css.height_("100%"),
     ]),
     css.global(".next", [
       css.font_size(length.pt(16)),
