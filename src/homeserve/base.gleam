@@ -129,7 +129,6 @@ fn stylesheet(globals: List(css.Global)) -> String {
         ]),
         css.global(".toplinks a, .bottomlinks a", [css.color("white")]),
         css.global(".content", [
-          css.min_height_("100%"),
           css.display("flex"),
           css.flex_direction("row"),
           css.flex("1"),
