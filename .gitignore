@@ -6,7 +6,7 @@ homeserve.toml
 erl_crash.dump
 
 /pages/*
-!/pages/.gitkeep
+!/pages/0.md
 /priv/static/assets/*
 !/priv/static/assets/.gitkeep
 !/priv/static/assets/logo.png

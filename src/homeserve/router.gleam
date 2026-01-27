@@ -60,6 +60,9 @@ pub fn handle_request(
     ["read", "toggle_animations"] -> toggle_a11y(req, "animated")
     ["read", page] -> serve_panel_by_page(req, page, cfg)
 
+    // Health check
+    ["health"] -> serve_health(req)
+
     // Hall of Contributors
     ["hoc"] -> serve_hoc(req, cache, None)
     ["hoc", volunteer] -> {
