@@ -251,6 +251,8 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
       css.background(section_bg),
       css.height_("auto"),
       css.padding(length.pt(10)),
+      css.margin_top(length.pt(10)),
+      css.margin_bottom(length.pt(10)),
     ]),
 
     css.global(".title", [
@@ -267,60 +269,62 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
       css.margin(length.px(0)),
       css.padding_left(length.pt(15)),
       css.list_style("disc"),
+      css.column_count("3"),
+      css.column_gap(length.pt(20)),
+      css.media(media.max_width(length.px(1024)), [
+        css.column_count("2"),
+      ]),
+      css.media(media.max_width(length.px(600)), [
+        css.column_count("1"),
+        css.padding_left(length.pt(10)),
+        css.column_gap(length.pt(10)),
+      ]),
     ]),
     css.global(".hoc_content", [
       css.flex_direction("column"),
       css.flex("1"),
     ]),
     css.global(".sections", [
-      css.display("grid"),
-      css.grid_template_columns("1fr 1fr 1fr"),
-      css.grid_template_rows("auto auto auto"),
-      css.gap(length.pt(10)),
       css.padding(length.pt(10)),
-      css.height_("auto"),
+      css.width_("100%"),
+      css.media(media.max_width(length.px(600)), [css.width_("auto")]),
     ]),
   ]
 
   let site_section = case site_contributors {
     [] -> []
     _ -> [
-      html.div(
-        [
-          attribute.class("section"),
-          attribute.style("grid-column", "1 / -1"),
-        ],
-        [
-          html.h3([], [html.text("🏗️ Site Contributors")]),
-          html.p([], [
-            html.text(
-              "Special thanks to those who help build and maintain the Homeserve platform itself.",
-            ),
-          ]),
-          html.div(
-            [],
-            list.map(site_contributors, fn(panel) {
-              html.div([], [
-                html.h3([], [html.text(panel.title)]),
-                html.p([], [
-                  html.text(
-                    "Development, infrastructure, design, and community support",
-                  ),
-                ]),
-              ])
-            }),
+      html.div([attribute.class("section")], [
+        html.h3([], [html.text("🏗️ Site Contributors")]),
+        html.p([], [
+          html.text(
+            "Special thanks to those who help build and maintain the Homeserve platform itself.",
           ),
-        ],
-      ),
+        ]),
+        html.div(
+          [],
+          list.map(site_contributors, fn(panel) {
+            html.div([], [
+              html.h3([], [html.text(panel.title)]),
+              html.p([], [
+                html.text(
+                  "Development, infrastructure, design, and community support",
+                ),
+              ]),
+            ])
+          }),
+        ),
+      ]),
     ]
   }
 
   let sections_content = [
-    // Artists section - spans all 3 columns at top
-    html.div([attribute.style("grid-column", "1 / -1")], [
-      render_section("Artists", get_section_contributors(hoc, Art)),
+    html.div([], [
+      html.h1([attribute.style("text-align", "center")], [
+        html.text("Volunteers & Contributors"),
+      ]),
     ]),
-    // Other three sections - equally spaced below
+    render_section("Artists", get_section_contributors(hoc, Art)),
     render_section("Writers", get_section_contributors(hoc, Writing)),
     render_section("Musicians", get_section_contributors(hoc, Music)),
     render_section("Misc.", get_section_contributors(hoc, Misc)),
@@ -329,15 +333,7 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
   let sections_with_site = list.append(sections_content, site_section)
 
   let body = [
-    html.div([attribute.class("sections")], [
-      html.div(
-        [attribute.class("title"), attribute.style("grid-column", "1 / -1")],
-        [
-          html.h1([], [html.text("The Hall of Contributors")]),
-        ],
-      ),
-      ..sections_with_site
-    ]),
+    html.div([attribute.class("sections")], sections_with_site),
   ]
 
   base.Page(head:, css:, body:)
