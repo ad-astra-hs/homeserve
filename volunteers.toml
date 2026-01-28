@@ -1,0 +1,11 @@
+["Michal"]
+social_links = ["https://mchal.lol"]
+bio = "Project Lead, Lead Developer, Infra. Engineer @ Ad Astra, Homeserve"
+
+["Alice Artist"]
+social_links = ["https://alice.dev", "https://twitter.com/alice"]
+bio = "UX Designer and front-end developer passionate about accessibility"
+
+["Bob Writer"]
+social_links = ["https://github.com/bobdev"]
+bio = "Backend engineer and systems architect"

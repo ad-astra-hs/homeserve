@@ -186,9 +186,16 @@ pub fn render_bottom_links(metadata: Meta, quirked: Bool, animated: Bool) {
     render_toggle_button("Quirks", quirked, "/read/toggle_quirks"),
     render_toggle_button("Animations", animated, "/read/toggle_animations"),
     html.a([attribute.href("/read/1")], [html.text("Start Over")]),
-    html.a([attribute.href("/read/" <> int.to_string(metadata.index - 1))], [
-      html.text("Go Back"),
-    ]),
+    case metadata.index > 1 {
+      True ->
+        html.a([attribute.href("/read/" <> int.to_string(metadata.index - 1))], [
+          html.text("Go Back"),
+        ])
+      False ->
+        html.a([attribute.href("/read/" <> int.to_string(metadata.index))], [
+          html.text("Go Back"),
+        ])
+    },
     html.a([attribute.href("/")], [html.text("Home")]),
   ])
 }

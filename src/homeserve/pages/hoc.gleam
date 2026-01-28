@@ -7,6 +7,8 @@ import gleam/uri
 import tempo/datetime
 import wisp
 
+import homeserve/volunteers
+
 import tempo.{Custom}
 
 import homeserve/base
@@ -266,12 +268,7 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
       css.padding_left(length.pt(15)),
       css.list_style("disc"),
     ]),
-    css.global(".title", [
-      css.width(length.percent(100)),
-      css.text_align("center"),
-      css.margin_bottom(length.pt(20)),
-    ]),
-    css.global(".content", [
+    css.global(".hoc_content", [
       css.flex_direction("column"),
       css.flex("1"),
     ]),
@@ -282,11 +279,6 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
       css.gap(length.pt(10)),
       css.padding(length.pt(10)),
       css.height_("auto"),
-    ]),
-    css.global(".title", [
-      css.width(length.percent(100)),
-      css.text_align("center"),
-      css.margin_bottom(length.pt(20)),
     ]),
   ]
 
@@ -357,6 +349,14 @@ pub fn build_contributor(
 ) -> base.Page {
   wisp.log_debug("Building contributor page for: " <> contributor)
 
+  // Load volunteers data
+  let volunteers_data = case volunteers.load() {
+    Ok(data) -> data
+    Error(_) -> []
+  }
+
+  let volunteer_info = volunteers.find_volunteer(volunteers_data, contributor)
+
   case get_contributor_info(contributor, panels) {
     None -> {
       wisp.log_warning(
@@ -410,6 +410,45 @@ pub fn build_contributor(
         ]),
       ]
 
+      // Build volunteer section if available
+      let volunteer_section = case volunteer_info {
+        Some(volunteer) -> [
+          html.div(
+            [
+              attribute.styles([
+                #("margin-top", "20px"),
+                #("padding-top", "20px"),
+                #("border-top", "1px solid #ccc"),
+              ]),
+            ],
+            [
+              html.h3([], [html.text("Volunteer Information")]),
+              html.p([], [html.text(volunteer.bio)]),
+              ..case volunteer.social_links {
+                [] -> []
+                links -> [
+                  html.h4([], [html.text("Links:")]),
+                  html.ul(
+                    [],
+                    list.map(links, fn(link) {
+                      html.li([], [
+                        html.a(
+                          [attribute.href(link), attribute.target("_blank")],
+                          [
+                            html.text(link),
+                          ],
+                        ),
+                      ])
+                    }),
+                  ),
+                ]
+              }
+            ],
+          ),
+        ]
+        None -> []
+      }
+
       let body = [
         html.div([attribute.class("contributor")], [
           html.div([attribute.class("contributor_main")], [
@@ -434,6 +473,7 @@ pub fn build_contributor(
                 <> format_date(stats.first_contribution_date),
               ),
             ]),
+            ..volunteer_section
           ]),
           html.div([attribute.class("contributor_side")], [
             html.h2([], [html.text("Panels Contributed:")]),
