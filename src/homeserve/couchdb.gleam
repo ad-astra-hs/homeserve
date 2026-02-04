@@ -17,6 +17,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
+import gleam/uri
 import wisp
 
 /// Configuration for CouchDB connection
@@ -212,7 +213,7 @@ pub fn get_doc(
   config: CouchConfig,
   doc_id: String,
 ) -> Result(Dict(String, Dynamic), CouchError) {
-  let path = "/" <> config.database <> "/" <> doc_id
+  let path = "/" <> config.database <> "/" <> uri.percent_encode(doc_id)
 
   case make_request(config, http.Get, path, None) {
     Error(err) -> Error(err)
@@ -240,9 +241,10 @@ pub fn put_doc(
 ) -> Result(String, CouchError) {
   let body = json.to_string(doc)
 
+  let encoded_id = uri.percent_encode(doc_id)
   let path = case rev {
-    Some(r) -> "/" <> config.database <> "/" <> doc_id <> "?rev=" <> r
-    None -> "/" <> config.database <> "/" <> doc_id
+    Some(r) -> "/" <> config.database <> "/" <> encoded_id <> "?rev=" <> r
+    None -> "/" <> config.database <> "/" <> encoded_id
   }
 
   case make_request(config, http.Put, path, Some(body)) {
@@ -269,7 +271,13 @@ pub fn delete_doc(
   doc_id: String,
   rev: String,
 ) -> Result(Nil, CouchError) {
-  let path = "/" <> config.database <> "/" <> doc_id <> "?rev=" <> rev
+  let path =
+    "/"
+    <> config.database
+    <> "/"
+    <> uri.percent_encode(doc_id)
+    <> "?rev="
+    <> rev
 
   case make_request(config, http.Delete, path, None) {
     Error(err) -> Error(err)
