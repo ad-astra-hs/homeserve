@@ -1,9 +1,7 @@
-// ---- Panel Module ----
-//
-// This is the main entry point for panel functionality.
-// It re-exports the public API from submodules and provides
-// the high-level rendering interface.
-
+/// Panel Module
+///
+/// Main entry point for panel functionality. Provides high-level
+/// rendering interface for webcomic panels stored in CouchDB.
 import gleam/int
 import gleam/option.{None, Some}
 import wisp
@@ -26,59 +24,31 @@ pub type Panel =
 pub type ParseError =
   types.ParseError
 
-// ---- Re-export loader functions ----
+// ---- Public loader API ----
 
-/// Loads and parses a panel file (.md) with YAML frontmatter.
-/// Uses the default pages directory.
+/// Loads and parses a panel from CouchDB by index.
 pub fn load_panel(panel_index: Int) -> Result(Panel, ParseError) {
   loader.load_panel(panel_index)
 }
 
-/// Loads and parses a panel file (.md) with YAML frontmatter from a specific directory.
-pub fn load_panel_from(
-  panel_index: Int,
-  pages_directory: String,
-) -> Result(Panel, ParseError) {
-  loader.load_panel_from(panel_index, pages_directory)
-}
-
-/// Decodes only the metadata for a panel (for caching/listing purposes).
-/// Uses the default pages directory.
+/// Decodes only the metadata for a panel from CouchDB by index.
 pub fn decode_meta(panel_index: Int) -> Result(Meta, ParseError) {
   loader.decode_meta(panel_index)
 }
 
-/// Decodes only the metadata for a panel from a specific directory.
-pub fn decode_meta_from(
-  panel_index: Int,
-  pages_directory: String,
-) -> Result(Meta, ParseError) {
-  loader.decode_meta_from(panel_index, pages_directory)
-}
-
 // ---- Public rendering API ----
 
-/// Renders a panel using the default pages directory.
+/// Renders a panel page.
 pub fn render_panel(
   panel_index: Int,
   quirked: Bool,
   animated: Bool,
 ) -> base.Page {
-  render_panel_from(panel_index, quirked, animated, "./pages")
-}
-
-/// Renders a panel from a specific pages directory.
-pub fn render_panel_from(
-  panel_index: Int,
-  quirked: Bool,
-  animated: Bool,
-  pages_directory: String,
-) -> base.Page {
   let panel_str = int.to_string(panel_index)
 
   wisp.log_debug("Rendering panel " <> panel_str)
 
-  case load_panel_from(panel_index, pages_directory) {
+  case load_panel(panel_index) {
     Error(err) -> {
       let err_str = types.parse_error_to_string(err)
       case err {
@@ -97,9 +67,7 @@ pub fn render_panel_from(
     Ok(panel) -> {
       wisp.log_debug("Successfully loaded panel " <> panel_str)
 
-      let next_page_text = case
-        decode_meta_from(panel_index + 1, pages_directory)
-      {
+      let next_page_text = case decode_meta(panel_index + 1) {
         Ok(next) -> Some(next.title)
         Error(_) -> None
       }

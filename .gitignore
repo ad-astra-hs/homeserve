@@ -1,22 +1,18 @@
-/.direnv
 /build
 homeserve.toml
 *.beam
 *.ez
 erl_crash.dump
 
-/pages/*
-!/pages/0.md
 /priv/static/assets/*
 !/priv/static/assets/.gitkeep
 !/priv/static/assets/logo.png
 !/priv/static/assets/background.png
 !/priv/static/assets/top_banner.png
 !/priv/static/assets/bottom_banner.png
+!/priv/static/assets/symbolic.svg
 !/priv/static/assets/evil_monkey.png
 /priv/static/extra/*
 !/priv/static/extra/default.js
 !/priv/static/extra/audio_player.js
 !/priv/static/extra/details_open.js
-/priv/converted/*
-!/priv/converted/.gitkeep

@@ -3,10 +3,9 @@
 // This module contains all type definitions for panel metadata,
 // media types, credits, and parsing errors.
 
-import glaml.{type SelectorError, type YamlError}
 import gleam/option.{type Option}
 
-/// Metadata for a webcomic panel, extracted from YAML frontmatter.
+/// Metadata for a webcomic panel, stored in CouchDB.
 pub type Meta {
   Meta(
     /// Sequential index of the panel in the story
@@ -57,7 +56,7 @@ pub type Media {
     url: String,
     /// Alt text for accessibility
     alt: Option(String),
-    /// Optional audio track file name
+    /// Optional audio track URL (can be absolute URL or relative path)
     track: Option(String),
   )
 }
@@ -65,7 +64,7 @@ pub type Media {
 /// Complete panel data including metadata and markdown content.
 pub type Panel {
   Panel(
-    /// Extracted metadata from frontmatter
+    /// Panel metadata from CouchDB
     meta: Meta,
     /// Markdown body content
     content: String,
@@ -74,29 +73,26 @@ pub type Panel {
 
 /// Errors that can occur during panel parsing and loading.
 pub type ParseError {
-  /// Panel file not found at specified path
+  /// Panel not found in database
   FileNotFound(path: String)
-  /// Frontmatter format is invalid or missing
+  /// Metadata format is invalid
   InvalidFrontmatter(message: String)
-  /// YAML parsing failed
-  YamlParseError(error: YamlError)
-  /// YAML field selection/query failed
-  YamlSelectionError(error: SelectorError)
-  /// Required field missing from frontmatter
+  /// Required field missing from metadata
   MissingField(field: String)
   /// Field has wrong type
   InvalidFieldType(field: String, expected: String)
+  /// Database connection or query error
+  DatabaseError(message: String)
 }
 
 /// Converts ParseError to human-readable string for logging.
 pub fn parse_error_to_string(err: ParseError) -> String {
   case err {
-    FileNotFound(path) -> "File not found: " <> path
-    InvalidFrontmatter(msg) -> "Invalid frontmatter: " <> msg
-    YamlParseError(_) -> "YAML parsing error"
-    YamlSelectionError(_) -> "YAML field selection error"
+    FileNotFound(path) -> "Panel not found: " <> path
+    InvalidFrontmatter(msg) -> "Invalid metadata: " <> msg
     MissingField(field) -> "Missing required field: " <> field
     InvalidFieldType(field, expected) ->
       "Invalid type for field '" <> field <> "', expected " <> expected
+    DatabaseError(msg) -> "Database error: " <> msg
   }
 }

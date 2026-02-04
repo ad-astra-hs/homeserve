@@ -1,29 +1,120 @@
-# Homeserve Configuration
-# This file configures the Homeserve web server.
-# All values shown are defaults - uncomment and modify as needed.
+# Homeserve Configuration File
+#
+# Copy this file to `homeserve.toml` and customize as needed.
+# All values shown here are the defaults - uncomment and modify to override.
+
+# =============================================================================
+# SERVER CONFIGURATION
+# =============================================================================
 
 [server]
-# The port to listen on
+# The TCP port to listen on for incoming HTTP connections.
+# Common values: 8000 (development), 80 (HTTP production), 8080 (alternative)
 port = 8000
 
-# The host/IP address to bind to
-# Use "0.0.0.0" to listen on all interfaces
-# Use "127.0.0.1" for localhost only
+# The network interface to bind to.
+# - "0.0.0.0" listens on all available network interfaces (production)
+# - "127.0.0.1" listens only on localhost (development only)
 host = "0.0.0.0"
 
+# =============================================================================
+# CACHE CONFIGURATION
+# =============================================================================
+
 [cache]
-# How long to cache panel metadata before reloading from disk (in minutes)
+# How long to cache panel metadata in memory before refreshing from CouchDB.
+# This reduces database load and improves response times.
+# Unit: minutes
 ttl_minutes = 60
 
-# How often to check for file changes (in seconds)
+# How frequently to poll CouchDB for changes (change feed polling interval).
+# Lower values detect changes faster but increase database load.
+# Unit: seconds
 watch_interval_seconds = 5
 
-[paths]
-# Directory containing panel markdown files (e.g., 1.md, 2.md, etc.)
-pages_directory = "./pages"
+# Maximum number of panels to keep in the cache.
+# When exceeded, oldest panels are evicted first.
+max_cache_size = 1000
 
-# Directory containing static assets (images, audio, etc.)
+# =============================================================================
+# PATHS CONFIGURATION
+# =============================================================================
+
+[paths]
+# Directory containing static assets (images, audio, video files).
+# These files are served directly at /assets/<filename>
 assets_directory = "./priv/static/assets"
 
-# Directory containing script and CSS files (per panel theming, interactivity, etc.)
+# Directory containing optional per-panel CSS and JavaScript files.
+# Files here are served at /assets/misc/<filename>
 extra_directory = "./priv/static/extra"
+
+# =============================================================================
+# COUCHDB CONFIGURATION (REQUIRED)
+# =============================================================================
+#
+# Homeserve requires CouchDB to store panel documents.
+# Without CouchDB, the application will not function properly.
+#
+# IMPORTANT:
+#   - Ensure CouchDB is running BEFORE starting Homeserve
+#   - The database will be created automatically if it doesn't exist
+#   - Run `gleam run -m setup verify` to verify the connection
+#   - Run `gleam run -m setup token` to generate a secure admin token
+
+[couchdb]
+# CouchDB connection settings.
+#
+# Quick start with Docker:
+#   docker run -d -p 5984:5984 \
+#     -e COUCHDB_USER=admin \
+#     -e COUCHDB_PASSWORD=password \
+#     couchdb:latest
+
+# Hostname or IP address of the CouchDB server.
+# Use "127.0.0.1" instead of "localhost" to avoid IPv6 connection issues.
+host = "127.0.0.1"
+
+# CouchDB port (default: 5984)
+port = 5984
+
+# Database name for storing panel documents.
+# The database will be created automatically if it doesn't exist.
+database = "homeserve_panels"
+
+# Authentication credentials (optional but recommended)
+# Leave as empty strings if CouchDB is running without authentication
+username = "admin"
+password = "password"
+
+# =============================================================================
+# ADMIN PANEL CONFIGURATION
+# =============================================================================
+
+[admin]
+# Authentication token for accessing the admin panel at /admin
+#
+# SECURITY WARNING: Change this from the default in production!
+# Generate a secure random token, for example:
+#   - Linux/macOS: openssl rand -base64 32
+#   - Or use any secure random string generator
+#
+# Access the admin panel with: /admin?token=<your-token>
+#
+# NOTE: For enhanced security, you can use a bcrypt hashed token.
+# The token can be either:
+#   - Plaintext (for development): token = "my-secret-token"
+#   - Bcrypt hash (for production): token = "$2b$10$..."
+#
+# When using a hashed token, users still enter the plaintext token,
+# but the config only stores the hash.
+token = "changeme"
+
+# =============================================================================
+# CONTACT CONFIGURATION
+# =============================================================================
+
+[contact]
+# Email address displayed on the privacy policy page for privacy concerns
+# and general contact. Update this to match your deployment.
+email = "admin@example.com"

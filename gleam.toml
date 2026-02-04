@@ -20,17 +20,19 @@ gleam_erlang = ">= 0.34.0 and < 1.0.0"
 gleam_stdlib = ">= 0.58.0 and < 0.60.0"
 gtempo = ">= 7.1.0 and < 8.0.0"
 simplifile = ">= 2.2.1 and < 3.0.0"
-glee = ">= 2.2.2 and < 3.0.0"
 gleam_http = ">= 4.0.0 and < 5.0.0"
 
 sketch_lustre = ">= 3.0.0 and < 4.0.0"
 sketch = ">= 4.1.0 and < 5.0.0"
 gleam_regexp = ">= 1.1.1 and < 2.0.0"
-mogrify = ">= 0.9.3 and < 1.0.0"
 gleam_otp = ">= 0.16.1 and < 1.0.0"
-glaml = ">= 3.0.2 and < 4.0.0"
 mork = ">= 1.11.1 and < 2.0.0"
 tom = ">= 2.0.1 and < 3.0.0"
+
+gleam_json = ">= 2.0.0 and < 3.0.0"
+gleam_httpc = ">= 4.0.0 and < 5.0.0"
+beecrypt = ">= 0.4.0 and < 1.0.0"
+
 
 [dev-dependencies]
 gleeunit = ">= 1.3.1 and < 2.0.0"

@@ -10,5 +10,6 @@ lint:
 
 check: lint test
 
-run:
-    bacon
+run: check
+    gleam run -m setup verify
+    gleam run

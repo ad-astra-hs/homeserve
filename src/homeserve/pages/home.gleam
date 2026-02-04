@@ -16,10 +16,6 @@ import wisp
 import homeserve/base
 import homeserve/pages/panel
 
-// ---- Constants ----
-
-const section_bg = "#e0e0e0"
-
 // ---- Social links ----
 
 type SocialLink {
@@ -72,8 +68,8 @@ fn render_social_link(link: SocialLink) {
 // ---- Page sections ----
 
 fn render_about_section() {
-  html.div([attribute.class("about")], [
-    html.h2([attribute.style("text-align", "center")], [
+  html.div([attribute.class("box")], [
+    html.h2([attribute.class("heading-bordered text-center")], [
       html.text("Ad Astra: Volo Kaj Malplena"),
     ]),
     html.p([], [
@@ -116,15 +112,12 @@ fn render_recent_panels(panels: List(panel.Meta)) {
     |> list.sort(fn(a, b) { int.compare(b.date, a.date) })
     |> list.take(15)
 
-  wisp.log_debug(
-    "Displaying "
-    <> int.to_string(list.length(recent_panels))
-    <> " recent panels on home page",
-  )
-
-  html.div([attribute.class("panels")], [
-    html.h2([], [html.text("Recent Pages")]),
-    html.ul([], list.map(recent_panels, render_panel_link)),
+  html.div([attribute.class("box flex-1")], [
+    html.h2([attribute.class("heading-bordered")], [html.text("Recent Pages")]),
+    html.ul(
+      [attribute.class("list-clean list-divided scrollable")],
+      list.map(recent_panels, render_panel_link),
+    ),
   ])
 }
 
@@ -133,7 +126,6 @@ fn render_panel_link(page: panel.Meta) {
     datetime.from_unix_seconds(page.date)
     |> datetime.get_date()
     |> date.format(tempo.ISO8601Date)
-
   html.li([], [
     html.a([attribute.href("/read/" <> int.to_string(page.index))], [
       html.text("[" <> date_str <> "] > " <> page.title),
@@ -145,11 +137,11 @@ fn render_contributor_section(panels: List(panel.Meta)) {
   case get_random_contributor(panels) {
     None -> html.div([], [])
     Some(contributor) ->
-      html.div([attribute.class("contributor")], [
-        html.h2([attribute.style("text-align", "center")], [
+      html.div([attribute.class("box")], [
+        html.h2([attribute.class("heading-bordered text-center")], [
           html.text("Featured Contributor"),
         ]),
-        html.p([attribute.style("text-align", "center")], [
+        html.p([attribute.class("text-center")], [
           html.text("Check out the work of "),
           html.a([attribute.href("/hoc/" <> uri.percent_encode(contributor))], [
             html.text(contributor),
@@ -175,6 +167,7 @@ fn get_random_contributor(panels: List(panel.Meta)) -> option.Option(String) {
 
   case all_contributors {
     [] -> None
+    [single] -> Some(single)
     _ -> {
       let random_index = int.random(list.length(all_contributors) - 1)
       case list.drop(all_contributors, random_index) {
@@ -190,37 +183,21 @@ fn get_random_contributor(panels: List(panel.Meta)) -> option.Option(String) {
 pub fn build_home(panels: List(panel.Meta)) -> base.Page {
   wisp.log_debug("Building home page")
 
-  let published_count =
-    panels
-    |> list.filter(fn(p) { !p.draft })
-    |> list.length
-
-  wisp.log_info(
-    "Home page: "
-    <> int.to_string(published_count)
-    <> " published panels out of "
-    <> int.to_string(list.length(panels))
-    <> " total",
-  )
-
   let head = [html.title([], "Ad Astra: Volo Kaj Malplena")]
 
   let css = [
+    // Left/right content layout
+    css.global(".content_left", [
+      css.flex("2"),
+      css.display("flex"),
+      css.flex_direction("column"),
+    ]),
     css.global(".content_right", [
       css.flex("1"),
       css.display("flex"),
       css.flex_direction("column"),
-      css.width_("auto"),
-      css.media(media.max_width(length.px(768)), [css.flex("auto")]),
     ]),
-    css.global(".panels, .socials, .about, .contributor, .evil_monkey", [
-      css.background(section_bg),
-      css.margin(length.pt(10)),
-      css.padding(length.pt(10)),
-      css.media(media.max_width(length.px(768)), [
-        css.min_height(length.percent(15)),
-      ]),
-    ]),
+    // Socials grid layout
     css.global(".socials", [
       css.display("grid"),
       css.place_items("center"),
@@ -232,23 +209,26 @@ pub fn build_home(panels: List(panel.Meta)) -> base.Page {
       css.width(length.px(32)),
       css.height(length.px(32)),
     ]),
-    css.global(".panels", [css.flex("1")]),
+    // Evil monkey image
+    css.global(".evil_monkey img", [
+      css.width(length.percent(100)),
+      css.height_("auto"),
+    ]),
+    // Flex utility
+    css.global(".flex-1", [css.flex("1")]),
   ]
 
   let body = [
     html.div([attribute.class("content_left")], [
       render_about_section(),
       render_contributor_section(panels),
-      html.div([attribute.class("evil_monkey")], [
-        html.img([
-          attribute.src("/assets/evil_monkey.png"),
-          attribute.styles([#("width", "100%"), #("height", "auto")]),
-        ]),
+      html.div([attribute.class("box evil_monkey")], [
+        html.img([attribute.src("/assets/evil_monkey.png")]),
       ]),
     ]),
     html.div([attribute.class("content_right")], [
       html.div(
-        [attribute.class("socials")],
+        [attribute.class("box socials")],
         list.map(social_links, render_social_link),
       ),
       render_recent_panels(panels),

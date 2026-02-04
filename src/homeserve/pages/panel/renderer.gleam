@@ -1,7 +1,7 @@
-// ---- Panel Rendering and UI Components ----
-//
-// This module handles the rendering of panels into HTML/CSS,
-// including media rendering, credits, navigation, and styling.
+//// Panel Rendering and UI Components
+////
+//// This module handles the rendering of panels into HTML/CSS,
+//// including media rendering, credits, navigation, and styling.
 
 import gleam/int
 import gleam/list
@@ -81,7 +81,7 @@ pub fn render_media(media: Media, animated: Bool) {
       }
       html.img(
         list.flatten([
-          [attribute.src(src), attribute.class("panel")],
+          [attribute.src(src), attribute.class("panel-media")],
           alt_attrs,
         ]),
       )
@@ -92,7 +92,7 @@ pub fn render_media(media: Media, animated: Bool) {
           [
             attribute.controls(True),
             attribute.src(media.url),
-            attribute.class("panel"),
+            attribute.class("panel-media"),
           ],
           alt_attrs,
         ]),
@@ -104,43 +104,82 @@ pub fn render_media(media: Media, animated: Bool) {
 
 // ---- Audio player rendering ----
 
+/// Extracts the filename from a URL or path.
+/// For "https://example.com/music/song.mp3" or "/assets/music/song.mp3"
+/// returns "song.mp3"
+fn extract_filename_from_url(url: String) -> String {
+  url
+  |> string.split("/")
+  |> list.last
+  |> result.unwrap(url)
+}
+
+/// Extracts the display name from a track URL.
+/// Takes the filename and strips the extension.
+/// For "song.mp3" returns "song"
+fn extract_track_display_name(track_url: String) -> String {
+  let filename = extract_filename_from_url(track_url)
+
+  // Split by "?" first to remove query params, then by "." for extension
+  let without_query = case string.split(filename, "?") {
+    [base, ..] -> base
+    [] -> filename
+  }
+
+  // Split by "." and take everything before the last extension
+  case string.split(without_query, ".") {
+    [name] -> name
+    parts -> {
+      // Drop the last part (extension), join the rest
+      let name_parts = list.take(parts, list.length(parts) - 1)
+      string.join(name_parts, ".")
+    }
+  }
+}
+
 /// Renders audio player controls if a track is specified.
+/// The track can be any URL (absolute or relative).
 pub fn render_audio_player(track: Option(String)) {
   case track {
     None -> element.none()
-    Some(track_name) ->
+    Some(track_url) -> {
+      let display_name = extract_track_display_name(track_url)
+
       element.fragment([
-        html.span([attribute.class("audio_controls")], [
-          html.text(
-            "🕪 \""
-            <> track_name
-            |> string.split(".")
-            |> list.first
-            |> result.unwrap("Unknown Track")
-            <> "\" ",
+        html.span([attribute.class("audio-controls")], [
+          html.text("🕪 \"" <> display_name <> "\" "),
+          html.button(
+            [attribute.id("play_pause"), attribute.class("btn btn-secondary")],
+            [
+              html.text("Play"),
+            ],
           ),
-          html.button([attribute.id("play_pause"), attribute.class("music")], [
-            html.text("Play"),
-          ]),
           html.text(" "),
-          html.button([attribute.class("music"), attribute.id("volume_down")], [
-            html.text("-"),
-          ]),
+          html.button(
+            [attribute.class("btn btn-secondary"), attribute.id("volume_down")],
+            [
+              html.text("-"),
+            ],
+          ),
           html.span([attribute.id("volume")], [html.text("")]),
-          html.button([attribute.class("music"), attribute.id("volume_up")], [
-            html.text("+"),
-          ]),
+          html.button(
+            [attribute.class("btn btn-secondary"), attribute.id("volume_up")],
+            [
+              html.text("+"),
+            ],
+          ),
         ]),
         html.audio(
           [
             attribute.class("music"),
             attribute.id("audio"),
-            attribute.src("/assets/" <> track_name),
+            attribute.src(track_url),
             attribute.loop(True),
           ],
           [html.text("Audio is not supported in this browser")],
         ),
       ])
+    }
   }
 }
 
@@ -153,7 +192,7 @@ pub fn render_next_link(metadata: Meta, next_page_text: Option(String)) {
       html.a(
         [
           attribute.href("/read/" <> int.to_string(metadata.index + 1)),
-          attribute.class("next"),
+          attribute.class("btn btn-primary next-link"),
         ],
         [html.text("> " <> next)],
       )
@@ -174,7 +213,7 @@ fn render_toggle_button(label: String, enabled: Bool, toggle_endpoint: String) {
         "onclick",
         "fetch('" <> toggle_endpoint <> "').then(()=>location.reload());",
       ),
-      attribute.class("toggle_button"),
+      attribute.class("btn btn-secondary"),
     ],
     [html.text(label <> " " <> symbol)],
   )
@@ -182,21 +221,39 @@ fn render_toggle_button(label: String, enabled: Bool, toggle_endpoint: String) {
 
 /// Renders the bottom navigation links and toggle buttons.
 pub fn render_bottom_links(metadata: Meta, quirked: Bool, animated: Bool) {
-  html.span([attribute.class("bottom_links")], [
+  html.span([attribute.class("nav-links")], [
     render_toggle_button("Quirks", quirked, "/read/toggle_quirks"),
     render_toggle_button("Animations", animated, "/read/toggle_animations"),
-    html.a([attribute.href("/read/1")], [html.text("Start Over")]),
+    html.a([attribute.href("/read/1")], [
+      html.text("Start Over"),
+    ]),
     case metadata.index > 1 {
       True ->
-        html.a([attribute.href("/read/" <> int.to_string(metadata.index - 1))], [
-          html.text("Go Back"),
-        ])
+        html.a(
+          [
+            attribute.href("/read/" <> int.to_string(metadata.index - 1)),
+          ],
+          [
+            html.text("Go Back"),
+          ],
+        )
       False ->
-        html.a([attribute.href("/read/" <> int.to_string(metadata.index))], [
-          html.text("Go Back"),
-        ])
+        html.a(
+          [
+            attribute.href("/read/" <> int.to_string(metadata.index)),
+          ],
+          [
+            html.text("Go Back"),
+          ],
+        )
     },
-    html.a([attribute.href("/")], [html.text("Home")]),
+    html.a(
+      [
+        attribute.href("/"),
+        attribute.style("margin-left", "auto"),
+      ],
+      [html.text("Home")],
+    ),
   ])
 }
 
@@ -205,8 +262,9 @@ pub fn render_bottom_links(metadata: Meta, quirked: Bool, animated: Bool) {
 /// Generates CSS rules for panel pages.
 pub fn build_css() -> List(css.Global) {
   [
+    // Page structure
     css.global(".page_margins", [
-      css.transform([transform.translate_x(length.percent(30))]),
+      css.transform([transform.translate_x(length.percent(27))]),
       css.width(length.percent(65)),
       css.media(media.max_width(length.px(768)), [
         css.transform([]),
@@ -217,67 +275,69 @@ pub fn build_css() -> List(css.Global) {
       css.display("flex"),
       css.flex_direction("column"),
       css.height_("100%"),
-      css.background("white"),
+      css.important(css.padding(length.pt(0))),
+      css.important(css.margin(length.pt(0))),
     ]),
     css.global(".page_outer h2", [css.text_align("center")]),
     css.global(".page_outer img, .page_outer video", [
       css.margin_bottom(length.pt(0)),
     ]),
+    // Panel media
+    css.global(".panel-media", []),
+    // Page content
     css.global(".page_inner", [
       css.text_align("center"),
       css.margin(length.pt(10)),
       css.margin_bottom(length.rlh(1.0)),
       css.height_("100%"),
     ]),
-    css.global(".next", [
-      css.font_size(length.pt(16)),
+    // Next link
+    css.global(".next-link", [
+      css.important(css.font_size(length.pt(16))),
       css.margin(length.pt(5)),
-      css.display("block"),
+      css.display("inline-block"),
       css.margin_top(length.pt(20)),
       css.margin_bottom(length.pt(20)),
+      css.important(css.border("none")),
+      css.important(css.text_decoration("underline")),
     ]),
-    css.global(".bottom_links", [
+    // Audio controls
+    css.global(".audio-controls", [
+      css.display("inline-block"),
+      css.padding(length.pt(3)),
+      css.margin_bottom(length.pt(10)),
+      css.width_("max-content"),
+      css.background("black"),
+      css.color("white"),
+    ]),
+    css.global(".audio-controls button", [
+      css.background("black"),
+      css.color("white"),
+      css.border("1px solid white"),
+    ]),
+    // Credits
+    css.global(".credits", [
+      css.font_size(length.pt(9)),
+      css.color("grey"),
+      css.margin(length.pt(10)),
+      css.margin_bottom(length.pt(0)),
+    ]),
+    css.global(".credits a", [
+      css.color("grey"),
+    ]),
+    css.global(".credits a:hover", [
+      css.text_decoration("underline"),
+    ]),
+    // Navigation links wrapper
+    css.global(".nav-links", [
       css.display("flex"),
       css.margin(length.pt(5)),
       css.align_items("center"),
       css.gap(length.pt(5)),
+      css.flex_wrap("wrap"),
     ]),
-    css.global(".credits", [
-      css.color("gray"),
-      css.margin(length.pt(10)),
-      css.margin_left(length.pt(5)),
-      css.margin_bottom(length.pt(0)),
-    ]),
-    css.global(".credits a", [css.color("gray")]),
-    css.global(".bottom_links a:last-child", [css.margin_left_("auto")]),
-    css.global(".music", [
-      css.border("1pt solid white"),
-      css.background("black"),
-      css.color("white"),
-    ]),
-    css.global(".toggle_button", [
-      css.border("1pt solid grey"),
-      css.background("#e9e9e9"),
-    ]),
-    css.global(".toggle_button:hover", [
-      css.border("1pt solid grey"),
-      css.background("#c9c9c9"),
-    ]),
-    css.global(".audio_controls", [
-      css.margin_top(length.pt(0)),
-      css.padding(length.pt(3)),
-      css.padding_right(length.pt(6)),
-      css.background("black"),
-      css.color("white"),
-      css.width_("fit-content"),
-      css.margin_bottom(length.pt(10)),
-    ]),
-    css.global("#volume_down", [
-      css.padding_left(length.pt(5)),
-      css.padding_right(length.pt(5)),
-    ]),
+    // Page inner details/summary
     css.global(".page_inner details", [
-      css.border("1pt dotted grey"),
       css.text_align("left"),
       css.display("flex"),
       css.padding(length.pt(10)),
@@ -286,15 +346,9 @@ pub fn build_css() -> List(css.Global) {
       css.margin_("0 auto"),
       css.width_("fit-content"),
       css.padding(length.pt(3)),
-      css.border("1pt solid grey"),
-      css.background("#e9e9e9"),
       css.margin_bottom(length.rlh(1.0)),
     ]),
-    css.global(".page_inner summary:hover", [
-      css.background("#c9c9c9"),
-      css.cursor("default"),
-    ]),
-    css.global(".page_inner summary::marker", [css.content("\"\"")]),
+    css.global(".page_inner summary::marker", [css.content("\"")]),
   ]
 }
 
@@ -347,14 +401,14 @@ pub fn build_panel(
 
   let body = [
     html.div([attribute.class("page_margins")], [
-      html.div([attribute.class("page_outer")], [
+      html.div([attribute.class("page_outer box")], [
         html.h2([], [html.text(metadata.title)]),
         render_media(metadata.media, animated),
         render_audio_player(metadata.media.track),
         element.unsafe_raw_html(
           "",
           "div",
-          [attribute.class("page_inner")],
+          [attribute.class("page_inner box")],
           parsed_page,
         ),
         render_next_link(metadata, next_page_text),

@@ -7,7 +7,6 @@ import wisp
 
 /// Internal quirk type.
 /// Replacements: List of tuples describing a regex matcher and a replacement string.
-/// > A Result type to handle errors during regex compilation, this value should be returned from compile_replacements.
 /// Transform: Function to apply to the message before replacement.
 /// Color: Optional color to assign to the dialogue.
 type Quirk {
@@ -19,6 +18,7 @@ type Quirk {
 }
 
 /// Defines pattern matching for dialogue lines.
+/// Format: "XX: message" where XX is a two-letter character code.
 fn dialogue_pattern() -> Result(Regexp, CompileError) {
   case regexp.from_string("^([A-Z]{2}): (.*)$") {
     Ok(pattern) -> Ok(pattern)
@@ -51,12 +51,21 @@ fn compile_replacements(
 
 /// Retrieves a quirk for a given character.
 fn get_quirk(character: String) -> Quirk {
+  // Example of how to add a quirk:
+  // "TC" -> Quirk(
+  //   compile_replacements([#("([aeiou])", "\\1\\1")]),  // Doubles vowels
+  //   string.uppercase,                                   // ALL CAPS
+  //   Some("#ff0000")                                     // Red color
+  // )
   case character {
     _ -> Quirk(compile_replacements([]), fn(a) { a }, None)
   }
 }
 
 /// Parses the document and applies quirks to matching dialogue lines.
+///
+/// When quirked=True, applies character-specific text transformations.
+/// When quirked=False, only wraps dialogue in HTML without transformation.
 pub fn parse_document(
   doc: String,
   quirked: Bool,

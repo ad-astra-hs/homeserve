@@ -6,17 +6,20 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
-import gleam/string_tree
 import gleam/uri
 import homeserve/base
 import homeserve/config.{type Config}
+import homeserve/couchdb
+import homeserve/health
+import homeserve/pages/admin
+import homeserve/pages/admin/volunteers as admin_volunteers
 import homeserve/pages/errors
 import homeserve/pages/hoc
 import homeserve/pages/home
 import homeserve/pages/panel
 import homeserve/pages/privacy_policy
 import homeserve/panel_cache
-import homeserve/web
+import homeserve/security
 import simplifile
 import wisp.{type Request, type Response}
 
@@ -24,6 +27,70 @@ import wisp.{type Request, type Response}
 
 /// One year in seconds
 const cookie_max_age_seconds = 31_536_000
+
+// ---- Web Utilities (merged from web.gleam) ----
+
+/// Middleware pipeline for all requests
+fn middleware(
+  req: wisp.Request,
+  handle_request: fn(wisp.Request) -> wisp.Response,
+) -> wisp.Response {
+  let req = wisp.method_override(req)
+  use <- wisp.log_request(req)
+  use <- wisp.rescue_crashes
+  use req <- wisp.handle_head(req)
+  handle_request(req)
+}
+
+/// Sets file response with appropriate MIME type
+fn file_with_mime(res: wisp.Response, path: String) -> wisp.Response {
+  let mime_type =
+    path
+    |> get_file_extension
+    |> extension_to_mime
+  res
+  |> wisp.set_header("content-type", mime_type)
+  |> wisp.set_body(wisp.File(path))
+}
+
+/// Extracts the file extension from a filename
+fn get_file_extension(filename: String) -> String {
+  filename
+  |> string.split(".")
+  |> list.last
+  |> result.unwrap("")
+}
+
+/// Map of file extensions to MIME types
+fn extension_to_mime(extension: String) -> String {
+  case extension {
+    // Audio
+    "mp3" -> "audio/mpeg"
+    "ogg" -> "audio/ogg"
+    "wav" -> "audio/wav"
+    "flac" -> "audio/flac"
+    // Video
+    "mp4" -> "video/mp4"
+    "webm" -> "video/webm"
+    // Image
+    "svg" -> "image/svg+xml"
+    "png" -> "image/png"
+    "jpg" | "jpeg" -> "image/jpeg"
+    "gif" -> "image/gif"
+    "webp" -> "image/webp"
+    // Web
+    "js" | "mjs" -> "text/javascript"
+    "css" -> "text/css"
+    "html" | "htm" -> "text/html"
+    "txt" -> "text/plain"
+    "json" -> "application/json"
+    // Fonts
+    "woff" -> "font/woff"
+    "woff2" -> "font/woff2"
+    // Default
+    _ -> "application/octet-stream"
+  }
+}
 
 // ---- Router ----
 
@@ -46,7 +113,7 @@ pub fn handle_request(
   cache: process.Subject(panel_cache.CacheMessage),
   cfg: Config,
 ) -> Response {
-  use req <- web.middleware(req)
+  use req <- middleware(req)
 
   case wisp.path_segments(req) {
     [] -> serve_home(req, cache)
@@ -62,13 +129,13 @@ pub fn handle_request(
     ["read", page] -> serve_panel_by_page(req, page, cfg)
 
     // Health check
-    ["health"] -> serve_health(req)
+    ["health"] -> health.serve_health(req, cfg, cache)
 
     // Hall of Contributors
-    ["hoc"] -> serve_hoc(req, cache, None)
+    ["hoc"] -> serve_hoc(req, cache, cfg, None)
     ["hoc", volunteer] -> {
       let decoded = uri.percent_decode(volunteer) |> result.unwrap(volunteer)
-      serve_hoc(req, cache, Some(decoded))
+      serve_hoc(req, cache, cfg, Some(decoded))
     }
 
     // Media assets (music, panels, etc.)
@@ -81,7 +148,80 @@ pub fn handle_request(
     ["apply"] -> wisp.redirect("https://forms.gle/4Fz62i4bJ5Z63ZkYA")
 
     // Privacy Policy
-    ["privacy"] -> serve_privacy_policy(req)
+    ["privacy"] -> serve_privacy_policy(req, cfg)
+
+    // Admin panel
+    ["admin"] -> admin.serve_admin(req, cfg)
+    ["admin", "create"] ->
+      admin.handle_create(req, couchdb.config_from_app_config(cfg), cfg)
+    ["admin", "list"] ->
+      admin.serve_list(req, couchdb.config_from_app_config(cfg), cfg)
+    ["admin", "edit", index] ->
+      admin.serve_edit(req, couchdb.config_from_app_config(cfg), cfg, index)
+    ["admin", "update"] ->
+      admin.handle_update(req, couchdb.config_from_app_config(cfg), cfg)
+    ["admin", "delete", index] -> {
+      case req.method {
+        http.Get ->
+          admin.handle_delete(
+            req,
+            couchdb.config_from_app_config(cfg),
+            cfg,
+            index,
+          )
+        http.Post ->
+          admin.handle_delete_post(
+            req,
+            couchdb.config_from_app_config(cfg),
+            cfg,
+            index,
+          )
+        _ -> serve_404(req)
+      }
+    }
+
+    // Volunteer admin routes
+    ["admin", "volunteers"] -> admin_volunteers.serve_volunteer_admin(req, cfg)
+    ["admin", "volunteers", "create"] ->
+      admin_volunteers.handle_create(
+        req,
+        couchdb.config_from_app_config(cfg),
+        cfg,
+      )
+    ["admin", "volunteers", "list"] ->
+      admin_volunteers.serve_list(req, couchdb.config_from_app_config(cfg), cfg)
+    ["admin", "volunteers", "edit", name] ->
+      admin_volunteers.serve_edit(
+        req,
+        couchdb.config_from_app_config(cfg),
+        cfg,
+        name,
+      )
+    ["admin", "volunteers", "update"] ->
+      admin_volunteers.handle_update(
+        req,
+        couchdb.config_from_app_config(cfg),
+        cfg,
+      )
+    ["admin", "volunteers", "delete", name] -> {
+      case req.method {
+        http.Get ->
+          admin_volunteers.handle_delete(
+            req,
+            couchdb.config_from_app_config(cfg),
+            cfg,
+            name,
+          )
+        http.Post ->
+          admin_volunteers.handle_delete_post(
+            req,
+            couchdb.config_from_app_config(cfg),
+            cfg,
+            name,
+          )
+        _ -> serve_404(req)
+      }
+    }
 
     _ -> serve_404(req)
   }
@@ -95,7 +235,17 @@ fn serve_home(
 ) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let panels = panel_cache.get_panels(cache)
+  let panels = case panel_cache.get_panels(cache) {
+    Ok(panels) -> panels
+    Error(panel_cache.CacheTimeout) -> {
+      wisp.log_warning("Cache timeout when serving home page")
+      []
+    }
+    Error(panel_cache.CacheUnavailable) -> {
+      wisp.log_warning("Cache unavailable when serving home page")
+      []
+    }
+  }
 
   wisp.ok()
   |> wisp.html_body(base.render_page(home.build_home(panels)))
@@ -111,7 +261,7 @@ fn serve_panel_by_page(req: Request, page: String, cfg: Config) -> Response {
   }
 }
 
-fn serve_panel(req: Request, which: Int, cfg: Config) -> Response {
+fn serve_panel(req: Request, which: Int, _cfg: Config) -> Response {
   use <- wisp.require_method(req, Get)
 
   let quirked = get_bool_cookie(req, "quirked", True)
@@ -119,28 +269,36 @@ fn serve_panel(req: Request, which: Int, cfg: Config) -> Response {
 
   wisp.ok()
   |> wisp.html_body(
-    base.render_page(panel.render_panel_from(
-      which,
-      quirked,
-      animated,
-      cfg.paths.pages_directory,
-    )),
+    base.render_page(panel.render_panel(which, quirked, animated)),
   )
 }
 
 fn serve_hoc(
   req: Request,
   cache: process.Subject(panel_cache.CacheMessage),
+  cfg: Config,
   volunteer: Option(String),
 ) -> Response {
   use <- wisp.require_method(req, Get)
 
-  let panels = panel_cache.get_panels(cache)
+  let panels = case panel_cache.get_panels(cache) {
+    Ok(panels) -> panels
+    Error(panel_cache.CacheTimeout) -> {
+      wisp.log_warning("Cache timeout when serving HOC page")
+      []
+    }
+    Error(panel_cache.CacheUnavailable) -> {
+      wisp.log_warning("Cache unavailable when serving HOC page")
+      []
+    }
+  }
+
+  let couch_config = couchdb.config_from_app_config(cfg)
 
   let page = case volunteer {
     Some(name) -> {
       wisp.log_debug("Serving contributor page for: " <> name)
-      hoc.build_contributor(name, panels)
+      hoc.build_contributor(name, panels, couch_config)
     }
     None -> hoc.build_hoc(panels)
   }
@@ -159,21 +317,13 @@ fn serve_404(req: Request) -> Response {
   |> wisp.html_body(base.render_page(errors.build_error(404, "Page not found")))
 }
 
-fn serve_privacy_policy(req: Request) -> Response {
+fn serve_privacy_policy(req: Request, cfg: Config) -> Response {
   use <- wisp.require_method(req, Get)
 
   wisp.ok()
-  |> wisp.html_body(base.render_page(privacy_policy.build_privacy_policy()))
-}
-
-fn serve_health(req: Request) -> Response {
-  use <- wisp.require_method(req, Get)
-
-  let json_body = "{\"status\": \"ok\"}" |> string_tree.from_string
-
-  wisp.ok()
-  |> wisp.set_header("content-type", "application/json")
-  |> wisp.set_body(wisp.Text(json_body))
+  |> wisp.html_body(
+    base.render_page(privacy_policy.build_privacy_policy(cfg.contact.email)),
+  )
 }
 
 // ---- Asset handling ----
@@ -181,13 +331,15 @@ fn serve_health(req: Request) -> Response {
 fn serve_asset(req: Request, asset: String, cfg: Config) -> Response {
   use <- wisp.require_method(req, Get)
 
-  // Security: prevent path traversal
-  case string.contains(asset, "..") {
-    True -> {
+  // Security: sanitize and validate path
+  case security.sanitize_filename(asset) {
+    None -> {
       wisp.log_warning("Path traversal attempt blocked in assets: " <> asset)
       serve_404(req)
     }
-    False -> serve_asset_unchecked(req, asset, cfg)
+    Some(safe_filename) -> {
+      serve_asset_unchecked(req, safe_filename, cfg)
+    }
   }
 }
 
@@ -205,19 +357,28 @@ fn serve_asset_unchecked(req: Request, asset: String, cfg: Config) -> Response {
 
   let full_path = [cfg.paths.assets_directory, path] |> string.join("/")
 
-  case simplifile.is_file(full_path) {
-    Ok(True) -> {
-      wisp.ok()
-      |> wisp.set_header("cache-control", "public, max-age=604800")
-      |> web.file_with_mime(full_path)
-    }
-    Ok(False) -> {
-      wisp.log_info("Asset not found: " <> full_path)
+  // Defense in depth: verify the resolved path is within the assets directory
+  case security.is_path_within_base(full_path, cfg.paths.assets_directory) {
+    False -> {
+      wisp.log_warning("Path validation failed for asset: " <> full_path)
       serve_404(req)
     }
-    Error(_) -> {
-      wisp.log_error("Failed to check if asset exists: " <> full_path)
-      serve_404(req)
+    True -> {
+      case simplifile.is_file(full_path) {
+        Ok(True) -> {
+          wisp.ok()
+          |> wisp.set_header("cache-control", "public, max-age=604800")
+          |> file_with_mime(full_path)
+        }
+        Ok(False) -> {
+          wisp.log_info("Asset not found: " <> full_path)
+          serve_404(req)
+        }
+        Error(_) -> {
+          wisp.log_error("Failed to check if asset exists: " <> full_path)
+          serve_404(req)
+        }
+      }
     }
   }
 }
@@ -233,29 +394,42 @@ fn is_animation_requested(req: Request) -> Bool {
 fn serve_extra(req: Request, extra: String, cfg: Config) -> Response {
   use <- wisp.require_method(req, Get)
 
-  // Security: prevent path traversal
-  case string.contains(extra, "..") {
-    True -> {
+  // Security: sanitize and validate path
+  case security.sanitize_filename(extra) {
+    None -> {
       wisp.log_warning(
         "Path traversal attempt blocked in extra assets: " <> extra,
       )
       serve_404(req)
     }
-    False -> {
-      let full_path = [cfg.paths.extra_directory, extra] |> string.join("/")
+    Some(safe_filename) -> {
+      let full_path =
+        [cfg.paths.extra_directory, safe_filename]
+        |> string.join("/")
 
-      case simplifile.is_file(full_path) {
-        Ok(True) -> {
-          wisp.ok()
-          |> web.file_with_mime(full_path)
-        }
-        Ok(False) -> {
-          wisp.log_info("Extra asset not found: " <> full_path)
+      // Defense in depth: verify path is within allowed directory
+      case security.is_path_within_base(full_path, cfg.paths.extra_directory) {
+        False -> {
+          wisp.log_warning("Path validation failed for extra: " <> full_path)
           serve_404(req)
         }
-        Error(_) -> {
-          wisp.log_error("Failed to check if extra asset exists: " <> full_path)
-          serve_404(req)
+        True -> {
+          case simplifile.is_file(full_path) {
+            Ok(True) -> {
+              wisp.ok()
+              |> file_with_mime(full_path)
+            }
+            Ok(False) -> {
+              wisp.log_info("Extra asset not found: " <> full_path)
+              serve_404(req)
+            }
+            Error(_) -> {
+              wisp.log_error(
+                "Failed to check if extra asset exists: " <> full_path,
+              )
+              serve_404(req)
+            }
+          }
         }
       }
     }

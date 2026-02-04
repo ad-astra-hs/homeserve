@@ -5,15 +5,11 @@ import sketch/css/length
 
 import homeserve/base
 
-/// Builds the privacy policy page with current, comprehensive privacy information.
-/// 
-/// The policy covers data collection (none), cookie usage (functional only),
-/// user rights, legal compliance, and contact information.
-/// 
-/// # Returns
-/// 
-/// Complete privacy policy page with modern styling
-pub fn build_privacy_policy() -> base.Page {
+/// Builds the privacy policy page.
+///
+/// Covers: data collection (minimal), cookie usage (functional only),
+/// user rights, and contact information.
+pub fn build_privacy_policy(contact_email: String) -> base.Page {
   let head = [html.title([], "Privacy Policy")]
   let css = [
     css.global(".dead_center", [
@@ -27,55 +23,69 @@ pub fn build_privacy_policy() -> base.Page {
     html.div([attribute.class("dead_center")], [
       html.h1([], [html.text("Privacy Policy")]),
       html.p([], [
-        html.text("Last updated: January 2026"),
+        html.text("Last updated: February 2026"),
       ]),
       html.h2([], [html.text("Data Collection")]),
       html.p([], [
-        html.text(
-          "We do not collect, store, or process any personal data. Our web server does not log IP addresses or other identifying information.",
-        ),
-      ]),
-      html.h2([], [html.text("Cookies")]),
-      html.p([], [
-        html.text("We use two optional functional cookies:"),
+        html.text("This server collects minimal data necessary for operation:"),
       ]),
       html.ul([], [
         html.li([], [
-          html.text("quirked: Remembers character quirk preferences"),
+          html.text("No IP addresses are logged or stored"),
         ]),
-        html.li([], [html.text("animated: Remembers animation settings")]),
+        html.li([], [
+          html.text("No analytics or tracking cookies are used"),
+        ]),
+      ]),
+      html.h2([], [html.text("Cookies")]),
+      html.p([], [
+        html.text("We use functional cookies only:"),
+      ]),
+      html.ul([], [
+        html.li([], [
+          html.text("quirked: Your character quirk preference (on/off)"),
+        ]),
+        html.li([], [
+          html.text("animated: Your animation preference (on/off)"),
+        ]),
+        html.li([], [
+          html.text(
+            "csrf_token: Security token for admin forms (only when using admin panel)",
+          ),
+        ]),
       ]),
       html.p([], [
         html.text(
-          "These cookies contain only boolean values and are set only when you click the respective toggle buttons. They are not used for tracking, analytics, or advertising.",
+          "These cookies contain no personal data and are not used for tracking or advertising. "
+          <> "They expire after one year or when you delete them.",
         ),
       ]),
       html.h2([], [html.text("Your Rights")]),
       html.ul([], [
         html.li([], [
-          html.text("Access: You know exactly what data we collect (none)"),
+          html.text(
+            "Transparency: This policy clearly states what data is handled",
+          ),
         ]),
         html.li([], [
-          html.text("Control: Cookies are optional and can be deleted anytime"),
+          html.text(
+            "Control: Delete cookies anytime through your browser settings",
+          ),
         ]),
-        html.li([], [html.text("Contact: Reach us with privacy questions")]),
-      ]),
-      html.h2([], [html.text("Legal Compliance")]),
-      html.p([], [
-        html.text(
-          "We comply with applicable privacy laws including GDPR and PECR. Our minimal data collection approach naturally respects privacy by design.",
-        ),
+        html.li([], [
+          html.text("Questions: Contact us with any privacy concerns"),
+        ]),
       ]),
       html.h2([], [html.text("Contact")]),
       html.p([], [
-        html.text("For privacy concerns: "),
-        html.a([attribute.href("mailto:michal@adastra.wtf")], [
-          html.text("michal@adastra.wtf"),
+        html.text("For privacy questions: "),
+        html.a([attribute.href("mailto:" <> contact_email)], [
+          html.text(contact_email),
         ]),
       ]),
       html.p([], [
         html.text(
-          "This policy may be updated as needed. Changes will be reflected here.",
+          "This policy may be updated periodically. Changes will be posted here.",
         ),
       ]),
     ]),

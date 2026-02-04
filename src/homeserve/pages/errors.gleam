@@ -1,3 +1,6 @@
+/// Error Page Builders
+///
+/// Generates error pages (404, 500, etc.) with consistent styling.
 import gleam/int
 
 import lustre/attribute

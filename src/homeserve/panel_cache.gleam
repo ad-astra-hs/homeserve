@@ -1,3 +1,8 @@
+//// Panel Cache with CouchDB
+////
+//// This module manages panel metadata caching with CouchDB change feed
+//// integration for automatic cache invalidation.
+
 import gleam/erlang
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -5,30 +10,59 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/actor
 import gleam/result
-import gleam/string
-import simplifile
 import wisp
 
 import homeserve/config.{type Config}
+import homeserve/couchdb
+import homeserve/db
 import homeserve/pages/panel.{type Meta}
 
 // ---- Constants ----
 
-const call_timeout_ms = 5000
+const call_timeout_ms = 60_000
+
+// 60 second timeout for CouchDB operations
+
+// ---- Error Types ----
+
+/// Cache operation errors
+pub type CacheError {
+  CacheTimeout
+  CacheUnavailable
+}
 
 // ---- Cache Types ----
 
 /// Messages that can be sent to the panel cache actor.
-/// 
-/// The cache actor manages panel metadata with TTL-based expiration
-/// and file system watching for automatic invalidation.
 pub type CacheMessage {
   /// Request current list of panel metadata, with reply channel for response
-  GetPanels(reply_to: Subject(List(Meta)))
-  /// Force cache invalidation and reload from file system
+  GetPanels(reply_to: Subject(Result(List(Meta), CacheError)))
+  /// Force cache invalidation and reload from CouchDB
   InvalidateCache
   /// Gracefully shutdown the cache actor
   Shutdown
+  /// Preload panels (used during startup)
+  PreloadPanels(panels: List(Meta))
+  /// Load panels from database (blocking operation)
+  LoadPanels(reply_to: Subject(Result(List(Meta), CacheError)))
+  /// Background reload without waiting for response
+  ReloadInBackground
+  /// Get cache health status
+  GetHealth(reply_to: Subject(CacheHealth))
+}
+
+/// Health status of the cache
+pub type CacheHealth {
+  CacheHealth(
+    /// Whether the cache has loaded panels successfully
+    is_ready: Bool,
+    /// Number of panels in cache
+    panel_count: Int,
+    /// When the cache was last loaded (Unix timestamp)
+    last_loaded_at: Option(Int),
+    /// Whether the cache is healthy
+    is_healthy: Bool,
+  )
 }
 
 type CacheState {
@@ -36,11 +70,20 @@ type CacheState {
     panels: List(Meta),
     loaded_at: Option(Int),
     cache_ttl_ms: Int,
-    pages_directory: String,
+    couch_config: couchdb.CouchConfig,
+    last_seq: Option(String),
+    max_cache_size: Int,
+    self: Subject(CacheMessage),
   )
 }
 
 // ---- Watcher Types ----
+
+/// Maximum backoff interval: 5 minutes
+const max_backoff_ms = 300_000
+
+/// Backoff multiplier on failure
+const backoff_multiplier = 2
 
 type WatcherMessage {
   CheckForChanges
@@ -50,67 +93,112 @@ type WatcherMessage {
 type WatcherState {
   WatcherState(
     cache: Subject(CacheMessage),
-    last_snapshot: List(FileSnapshot),
+    couch_config: couchdb.CouchConfig,
+    last_seq: Option(String),
     self: Subject(WatcherMessage),
-    pages_directory: String,
     watch_interval_ms: Int,
+    /// Current backoff delay in milliseconds (for exponential backoff)
+    current_backoff_ms: Int,
+    /// Number of consecutive failures
+    consecutive_failures: Int,
+    /// Whether the watcher is currently healthy
+    is_healthy: Bool,
   )
-}
-
-type FileSnapshot {
-  FileSnapshot(path: String, modified: Int)
 }
 
 // ---- Public API ----
 
-/// Starts the panel cache actor with file watching and TTL-based expiration.
-/// 
-/// This creates an actor that manages panel metadata caching with the following features:
-/// - TTL-based cache expiration (configurable minutes)
-/// - File system watching for automatic cache invalidation
-/// - Concurrent access through message passing
-/// - Graceful shutdown support
-/// 
-/// # Parameters
-/// 
-/// - `cfg`: Application configuration containing cache settings
-/// 
-/// # Returns
-/// 
-/// Subject for sending messages to the cache actor, or StartError if actor fails to start
+/// Starts the panel cache actor with CouchDB change feed monitoring.
 pub fn start(cfg: Config) -> Result(Subject(CacheMessage), actor.StartError) {
   let cache_ttl_ms = cfg.cache.ttl_minutes * 60 * 1000
   let watch_interval_ms = cfg.cache.watch_interval_seconds * 1000
-  let pages_directory = cfg.paths.pages_directory
+
+  let couch_config =
+    couchdb.CouchConfig(
+      host: cfg.couchdb.host,
+      port: cfg.couchdb.port,
+      database: cfg.couchdb.database,
+      username: cfg.couchdb.username,
+      password: cfg.couchdb.password,
+    )
 
   wisp.log_info(
-    "Starting panel cache actor with "
-    <> int.to_string(cfg.cache.ttl_minutes)
-    <> " minute TTL and file watching every "
-    <> int.to_string(cfg.cache.watch_interval_seconds)
-    <> " seconds",
+    "Starting panel cache with CouchDB at "
+    <> couch_config.host
+    <> ":"
+    <> int.to_string(couch_config.port)
+    <> "/"
+    <> couch_config.database,
   )
 
-  // Start the cache actor
+  // Create self-reference for the actor
+  let self_subject = process.new_subject()
+
+  // Don't block on database init - we'll retry on first access
+  // This prevents the server from hanging if CouchDB is not available
   let initial_state =
     CacheState(
       panels: [],
       loaded_at: None,
       cache_ttl_ms: cache_ttl_ms,
-      pages_directory: pages_directory,
+      couch_config: couch_config,
+      last_seq: None,
+      max_cache_size: cfg.cache.max_cache_size,
+      self: self_subject,
     )
 
-  use cache <- result.try(actor.start(initial_state, handle_cache_message))
+  use cache <- result.try(
+    actor.start_spec(actor.Spec(
+      init: fn() {
+        let selector =
+          process.new_selector()
+          |> process.selecting(self_subject, fn(msg) { msg })
+        actor.Ready(CacheState(..initial_state, self: self_subject), selector)
+      },
+      init_timeout: 5000,
+      loop: handle_cache_message,
+    )),
+  )
 
-  // Start the file watcher
-  start_watcher(cache, pages_directory, watch_interval_ms)
+  // Try to load panels initially (don't block on failure)
+  wisp.log_info("Attempting initial panel load from CouchDB...")
+  case db.get_all_meta(couch_config) {
+    Ok(panels) -> {
+      wisp.log_info(
+        "Pre-loaded "
+        <> int.to_string(list.length(panels))
+        <> " panels from CouchDB",
+      )
+      process.send(cache, PreloadPanels(panels))
+    }
+    Error(err) -> {
+      wisp.log_warning(
+        "Initial panel load failed: " <> couchdb.error_to_string(err),
+      )
+      wisp.log_warning(
+        "Panels will be loaded on first request (may cause delays)",
+      )
+    }
+  }
+
+  // Start the CouchDB change feed watcher
+  start_watcher(cache, couch_config, watch_interval_ms)
 
   Ok(cache)
 }
 
 /// Gets the list of panels, using the cache if available and not expired.
-pub fn get_panels(cache: Subject(CacheMessage)) -> List(Meta) {
-  actor.call(cache, GetPanels, call_timeout_ms)
+/// Returns a Result to avoid crashes on timeout.
+pub fn get_panels(
+  cache: Subject(CacheMessage),
+) -> Result(List(Meta), CacheError) {
+  let reply_to = process.new_subject()
+  process.send(cache, GetPanels(reply_to))
+
+  case process.receive(reply_to, call_timeout_ms) {
+    Ok(result) -> result
+    Error(_) -> Error(CacheTimeout)
+  }
 }
 
 /// Invalidates the cache, forcing a reload on next access.
@@ -123,6 +211,48 @@ pub fn shutdown(cache: Subject(CacheMessage)) -> Nil {
   process.send(cache, Shutdown)
 }
 
+/// Gets the health status of the cache.
+pub fn get_health(cache: Subject(CacheMessage)) -> CacheHealth {
+  let reply_to = process.new_subject()
+  process.send(cache, GetHealth(reply_to))
+
+  case process.receive(reply_to, call_timeout_ms) {
+    Ok(health) -> health
+    Error(_) ->
+      CacheHealth(
+        is_ready: False,
+        panel_count: 0,
+        last_loaded_at: None,
+        is_healthy: False,
+      )
+  }
+}
+
+// ---- Cache Size Management ----
+
+/// Limits the cache to the configured maximum size.
+/// Keeps only the first max_size items (assumes panels are ordered by priority).
+fn limit_cache_size(panels: List(Meta), max_size: Int) -> List(Meta) {
+  let current_size = list.length(panels)
+  case current_size > max_size {
+    True -> {
+      let excess = current_size - max_size
+      wisp.log_info(
+        "Cache size limit exceeded: "
+        <> int.to_string(current_size)
+        <> " > "
+        <> int.to_string(max_size)
+        <> ", truncating by "
+        <> int.to_string(excess)
+        <> " panels",
+      )
+      // Take only first max_size items
+      list.take(panels, max_size)
+    }
+    False -> panels
+  }
+}
+
 // ---- Cache Actor ----
 
 fn handle_cache_message(
@@ -132,84 +262,212 @@ fn handle_cache_message(
   case message {
     GetPanels(reply_to) -> {
       let now = current_time_ms()
-      let is_valid = case state.loaded_at {
-        None -> False
-        Some(loaded_at) -> now - loaded_at < state.cache_ttl_ms
+      let is_expired = case state.loaded_at {
+        None -> True
+        Some(loaded_at) -> now - loaded_at >= state.cache_ttl_ms
       }
 
-      let #(panels, new_state) = case is_valid {
-        True -> {
+      let is_reload_in_progress = case state.loaded_at {
+        None -> False
+        // If loaded_at is within last 5 seconds, assume reload is in progress
+        Some(loaded_at) -> now - loaded_at < 5000
+      }
+
+      case is_expired, is_reload_in_progress {
+        // Cache valid - return immediately
+        False, _ -> {
           wisp.log_debug(
             "Returning cached panel list ("
             <> int.to_string(list.length(state.panels))
-            <> " panels, "
-            <> int.to_string(time_remaining_minutes(
-              state.loaded_at,
-              now,
-              state.cache_ttl_ms,
-            ))
-            <> " minutes until expiry)",
+            <> " panels)",
           )
-          #(state.panels, state)
+          process.send(reply_to, Ok(state.panels))
+          actor.continue(state)
         }
-        False -> {
-          case state.loaded_at {
-            None -> wisp.log_info("Loading panel list from disk (cache empty)")
-            Some(_) ->
-              wisp.log_info("Loading panel list from disk (cache expired)")
-          }
-          let panels = load_panels_from_disk(state.pages_directory)
-          wisp.log_info(
-            "Cached "
-            <> int.to_string(list.length(panels))
-            <> " panels (TTL: "
-            <> int.to_string(state.cache_ttl_ms / 60_000)
-            <> " minutes)",
+
+        // Expired but reload already in progress - return stale data
+        True, True -> {
+          wisp.log_debug(
+            "Cache reload in progress, returning stale data ("
+            <> int.to_string(list.length(state.panels))
+            <> " panels)",
           )
-          #(panels, CacheState(..state, panels: panels, loaded_at: Some(now)))
+          process.send(reply_to, Ok(state.panels))
+          actor.continue(state)
+        }
+
+        // Expired and no reload in progress - trigger background reload
+        True, False -> {
+          wisp.log_info(
+            "Cache expired, returning "
+            <> case list.is_empty(state.panels) {
+              True -> "empty list"
+              False ->
+                "stale data ("
+                <> int.to_string(list.length(state.panels))
+                <> " panels)"
+            }
+            <> ", triggering background reload...",
+          )
+          process.send(reply_to, Ok(state.panels))
+
+          // Trigger background reload
+          process.send(state.self, ReloadInBackground)
+
+          // Update loaded_at to prevent multiple simultaneous reloads
+          actor.continue(
+            CacheState(
+              ..state,
+              loaded_at: Some(current_time_ms()),
+              max_cache_size: state.max_cache_size,
+            ),
+          )
         }
       }
-      process.send(reply_to, panels)
-      actor.continue(new_state)
     }
 
     InvalidateCache -> {
       wisp.log_info("Panel cache invalidated")
-      actor.continue(CacheState(..state, panels: [], loaded_at: None))
+      actor.continue(
+        CacheState(
+          ..state,
+          panels: [],
+          loaded_at: None,
+          max_cache_size: state.max_cache_size,
+        ),
+      )
     }
 
     Shutdown -> {
       wisp.log_info("Panel cache shutting down")
       actor.Stop(process.Normal)
     }
+
+    PreloadPanels(panels) -> {
+      let limited_panels = limit_cache_size(panels, state.max_cache_size)
+      wisp.log_info(
+        "Preloaded "
+        <> int.to_string(list.length(limited_panels))
+        <> " panels into cache"
+        <> case list.length(limited_panels) < list.length(panels) {
+          True -> " (limited from " <> int.to_string(list.length(panels)) <> ")"
+          False -> ""
+        },
+      )
+      let now = current_time_ms()
+      actor.continue(
+        CacheState(
+          ..state,
+          panels: limited_panels,
+          loaded_at: Some(now),
+          max_cache_size: state.max_cache_size,
+        ),
+      )
+    }
+
+    LoadPanels(reply_to) -> {
+      wisp.log_info("Loading panels from database...")
+      case db.get_all_meta(state.couch_config) {
+        Ok(panels) -> {
+          let limited_panels = limit_cache_size(panels, state.max_cache_size)
+          let now = current_time_ms()
+          process.send(reply_to, Ok(limited_panels))
+          actor.continue(
+            CacheState(
+              ..state,
+              panels: limited_panels,
+              loaded_at: Some(now),
+              max_cache_size: state.max_cache_size,
+            ),
+          )
+        }
+        Error(err) -> {
+          wisp.log_warning(
+            "Failed to load panels from database: "
+            <> couchdb.error_to_string(err),
+          )
+          process.send(reply_to, Error(CacheUnavailable))
+          actor.continue(state)
+        }
+      }
+    }
+
+    ReloadInBackground -> {
+      wisp.log_info("Background reload of panels from database...")
+      case db.get_all_meta(state.couch_config) {
+        Ok(panels) -> {
+          let limited_panels = limit_cache_size(panels, state.max_cache_size)
+          let now = current_time_ms()
+          wisp.log_info(
+            "Background reload complete: "
+            <> int.to_string(list.length(limited_panels))
+            <> " panels loaded",
+          )
+          actor.continue(
+            CacheState(
+              ..state,
+              panels: limited_panels,
+              loaded_at: Some(now),
+              max_cache_size: state.max_cache_size,
+            ),
+          )
+        }
+        Error(err) -> {
+          wisp.log_warning(
+            "Background reload failed: " <> couchdb.error_to_string(err),
+          )
+          // Clear loaded_at to allow retry on next request
+          actor.continue(CacheState(..state, loaded_at: None))
+        }
+      }
+    }
+
+    GetHealth(reply_to) -> {
+      let panel_count = list.length(state.panels)
+      let is_ready = !list.is_empty(state.panels)
+      let is_healthy = case state.loaded_at {
+        None -> False
+        Some(loaded_at) ->
+          current_time_ms() - loaded_at < state.cache_ttl_ms * 2
+      }
+      process.send(
+        reply_to,
+        CacheHealth(
+          is_ready: is_ready,
+          panel_count: panel_count,
+          last_loaded_at: state.loaded_at,
+          is_healthy: is_healthy,
+        ),
+      )
+      actor.continue(state)
+    }
   }
 }
 
-// ---- File Watcher ----
+// ---- Change Feed Watcher ----
 
 fn start_watcher(
   cache: Subject(CacheMessage),
-  pages_directory: String,
+  couch_config: couchdb.CouchConfig,
   watch_interval_ms: Int,
 ) -> Nil {
-  let initial_snapshot = get_directory_snapshot(pages_directory)
-
-  // Create a subject for the watcher to send messages to itself
   let self_subject = process.new_subject()
 
   let watcher_state =
     WatcherState(
       cache: cache,
-      last_snapshot: initial_snapshot,
+      couch_config: couch_config,
+      last_seq: None,
       self: self_subject,
-      pages_directory: pages_directory,
       watch_interval_ms: watch_interval_ms,
+      current_backoff_ms: watch_interval_ms,
+      consecutive_failures: 0,
+      is_healthy: True,
     )
 
   case
     actor.start_spec(actor.Spec(
       init: fn() {
-        // Set up the selector to receive messages from the self subject
         let selector =
           process.new_selector()
           |> process.selecting(self_subject, fn(msg) { msg })
@@ -225,9 +483,7 @@ fn start_watcher(
   {
     Ok(_) -> {
       wisp.log_info(
-        "File watcher started, monitoring "
-        <> pages_directory
-        <> " every "
+        "CouchDB change feed watcher started, checking every "
         <> int.to_string(watch_interval_ms / 1000)
         <> " seconds",
       )
@@ -235,10 +491,19 @@ fn start_watcher(
     }
     Error(_) -> {
       wisp.log_warning(
-        "Failed to start file watcher, cache will still work but won't auto-invalidate on file changes",
+        "Failed to start change feed watcher, cache will use TTL only",
       )
       Nil
     }
+  }
+}
+
+/// Calculate the next backoff delay with exponential backoff
+fn calculate_backoff(current_backoff: Int, _base_interval: Int) -> Int {
+  let next_backoff = current_backoff * backoff_multiplier
+  case next_backoff > max_backoff_ms {
+    True -> max_backoff_ms
+    False -> next_backoff
   }
 }
 
@@ -248,151 +513,95 @@ fn handle_watcher_message(
 ) -> actor.Next(WatcherMessage, WatcherState) {
   case message {
     CheckForChanges -> {
-      let current_snapshot = get_directory_snapshot(state.pages_directory)
-      let changes = detect_changes(state.last_snapshot, current_snapshot)
+      // Poll for changes from CouchDB
+      case db.get_changes(state.couch_config, state.last_seq) {
+        Error(err) -> {
+          let new_failures = state.consecutive_failures + 1
+          let new_backoff =
+            calculate_backoff(state.current_backoff_ms, state.watch_interval_ms)
 
-      let new_state = case changes {
-        [] -> state
-        _ -> {
-          // Log what changed
-          list.each(changes, fn(change) {
-            wisp.log_info("File change detected: " <> change)
-          })
+          wisp.log_warning(
+            "Change feed poll failed (attempt "
+            <> int.to_string(new_failures)
+            <> "): "
+            <> couchdb.error_to_string(err),
+          )
+          wisp.log_info(
+            "Retrying in " <> int.to_string(new_backoff / 1000) <> " seconds",
+          )
 
-          // Invalidate the cache
-          process.send(state.cache, InvalidateCache)
+          // Schedule next check with backoff
+          process.send_after(state.self, new_backoff, CheckForChanges)
 
-          // Update snapshot
-          WatcherState(..state, last_snapshot: current_snapshot)
+          actor.continue(
+            WatcherState(
+              ..state,
+              current_backoff_ms: new_backoff,
+              consecutive_failures: new_failures,
+              is_healthy: False,
+            ),
+          )
+        }
+        Ok(#(new_seq, changes)) -> {
+          // Reset backoff on success
+          let was_unhealthy = !state.is_healthy
+          let new_state = case list.is_empty(changes) {
+            True ->
+              WatcherState(
+                ..state,
+                current_backoff_ms: state.watch_interval_ms,
+                consecutive_failures: 0,
+                is_healthy: True,
+              )
+            False -> {
+              // Log changes
+              list.each(changes, fn(meta) {
+                wisp.log_info(
+                  "Panel change detected: #"
+                  <> int.to_string(meta.index)
+                  <> " - "
+                  <> meta.title,
+                )
+              })
+
+              // Invalidate cache to force reload
+              process.send(state.cache, InvalidateCache)
+
+              WatcherState(
+                ..state,
+                last_seq: Some(new_seq),
+                current_backoff_ms: state.watch_interval_ms,
+                consecutive_failures: 0,
+                is_healthy: True,
+              )
+            }
+          }
+
+          case was_unhealthy {
+            True -> wisp.log_info("Change feed connection restored")
+            False -> Nil
+          }
+
+          // Schedule next check at normal interval
+          process.send_after(
+            state.self,
+            state.watch_interval_ms,
+            CheckForChanges,
+          )
+          actor.continue(new_state)
         }
       }
-
-      // Schedule next check using the stored self subject
-      process.send_after(state.self, state.watch_interval_ms, CheckForChanges)
-
-      actor.continue(new_state)
     }
 
     StopWatcher -> {
-      wisp.log_info("File watcher stopping")
+      wisp.log_info("Change feed watcher stopping")
       actor.Stop(process.Normal)
     }
   }
 }
 
-// ---- File Snapshot Functions ----
-
-fn get_directory_snapshot(pages_directory: String) -> List(FileSnapshot) {
-  get_all_files(pages_directory)
-  |> list.filter_map(fn(path) {
-    case get_file_modified_time(path) {
-      Ok(modified) -> Ok(FileSnapshot(path: path, modified: modified))
-      Error(_) -> Error(Nil)
-    }
-  })
-  |> list.sort(fn(a, b) { string.compare(a.path, b.path) })
-}
-
-fn get_all_files(directory: String) -> List(String) {
-  case simplifile.read_directory(directory) {
-    Error(_) -> []
-    Ok(entries) -> {
-      list.flat_map(entries, fn(entry) {
-        let path = directory <> "/" <> entry
-        case simplifile.is_directory(path) {
-          Ok(True) -> get_all_files(path)
-          _ -> [path]
-        }
-      })
-    }
-  }
-}
-
-fn get_file_modified_time(path: String) -> Result(Int, Nil) {
-  case simplifile.file_info(path) {
-    Ok(info) -> Ok(info.mtime_seconds)
-    Error(_) -> Error(Nil)
-  }
-}
-
-fn detect_changes(
-  old_snapshot: List(FileSnapshot),
-  new_snapshot: List(FileSnapshot),
-) -> List(String) {
-  let old_paths = list.map(old_snapshot, fn(f) { f.path })
-  let new_paths = list.map(new_snapshot, fn(f) { f.path })
-
-  // Find added files
-  let added =
-    new_paths
-    |> list.filter(fn(p) { !list.contains(old_paths, p) })
-
-  // Find removed files
-  let removed =
-    old_paths
-    |> list.filter(fn(p) { !list.contains(new_paths, p) })
-
-  // Find modified files
-  let modified =
-    new_snapshot
-    |> list.filter_map(fn(new_file) {
-      case list.find(old_snapshot, fn(old) { old.path == new_file.path }) {
-        Ok(old_file) if old_file.modified != new_file.modified ->
-          Ok(new_file.path)
-        _ -> Error(Nil)
-      }
-    })
-
-  list.flatten([added, removed, modified])
-}
-
 // ---- Helper Functions ----
-
-fn load_panels_from_disk(pages_directory: String) -> List(Meta) {
-  case simplifile.read_directory(pages_directory) {
-    Error(err) -> {
-      wisp.log_error(
-        "Failed to read pages directory: " <> simplifile.describe_error(err),
-      )
-      []
-    }
-    Ok(files) -> {
-      let panels =
-        files
-        // Filter for .md files and extract the panel number from filename
-        |> list.filter(fn(file) { string.ends_with(file, ".md") })
-        |> list.filter_map(fn(file) {
-          // Remove .md extension and parse as int
-          file
-          |> string.drop_end(3)
-          |> int.base_parse(10)
-        })
-        |> list.filter_map(fn(index) {
-          case panel.decode_meta_from(index, pages_directory) {
-            Ok(meta) -> Ok(meta)
-            Error(_) -> Error(Nil)
-          }
-        })
-
-      wisp.log_debug(
-        "Loaded " <> int.to_string(list.length(panels)) <> " panels from disk",
-      )
-      panels
-    }
-  }
-}
 
 fn current_time_ms() -> Int {
   erlang.system_time(erlang.Millisecond)
-}
-
-fn time_remaining_minutes(loaded_at: Option(Int), now: Int, ttl_ms: Int) -> Int {
-  case loaded_at {
-    None -> 0
-    Some(loaded) -> {
-      let elapsed = now - loaded
-      let remaining = ttl_ms - elapsed
-      remaining / 60_000
-    }
-  }
 }

@@ -1,28 +1,27 @@
+//// Hall of Contributors
+////
+//// Lists all contributors to the project based on panel credits from CouchDB.
+
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/string
 import gleam/uri
-import tempo/datetime
-import wisp
-
-import homeserve/volunteers
-
 import tempo.{Custom}
+import tempo/datetime
 
 import homeserve/base
+import homeserve/couchdb
+import homeserve/db
 import homeserve/pages/errors
 import homeserve/pages/panel
+
 import lustre/attribute
+import lustre/element
 import lustre/element/html
 import sketch/css
 import sketch/css/length
-import sketch/css/media
-
-// ---- Constants ----
-
-const section_bg = "#e0e0e0"
 
 // ---- Types ----
 
@@ -70,11 +69,48 @@ fn compare_types(a: ContributionType, b: ContributionType) -> order.Order {
   int.compare(contribution_type_rank(a), contribution_type_rank(b))
 }
 
+fn type_to_label(t: ContributionType) -> String {
+  case t {
+    Art -> "ARTISTS"
+    Writing -> "WRITERS"
+    Music -> "MUSICIANS"
+    Misc -> "MISC."
+  }
+}
+
+fn type_to_singular(t: ContributionType) -> String {
+  case t {
+    Art -> "Art"
+    Writing -> "Writing"
+    Music -> "Music"
+    Misc -> "Misc."
+  }
+}
+
 // ---- Data extraction ----
+
+fn unique_case_insensitive(names: List(String)) -> List(String) {
+  let fold_fn = fn(acc: List(String), name: String) {
+    let normalized = normalize_name(name)
+    let already_exists =
+      list.any(acc, fn(existing) { normalize_name(existing) == normalized })
+    case already_exists {
+      True -> acc
+      False -> [name, ..acc]
+    }
+  }
+  list.fold(names, [], fold_fn)
+  |> list.reverse
+}
 
 fn unique_contributors(panels: List(panel.Meta)) -> Hoc {
   let get_unique = fn(extractor) {
-    panels |> list.flat_map(extractor) |> list.unique
+    panels
+    |> list.flat_map(extractor)
+    |> unique_case_insensitive
+    |> list.sort(fn(a, b) {
+      string.compare(normalize_name(a), normalize_name(b))
+    })
   }
 
   Hoc(sections: [
@@ -83,10 +119,6 @@ fn unique_contributors(panels: List(panel.Meta)) -> Hoc {
     #(Music, get_unique(fn(p) { p.credits.musicians })),
     #(Misc, get_unique(fn(p) { p.credits.misc })),
   ])
-}
-
-fn get_site_contributors(panels: List(panel.Meta)) -> List(panel.Meta) {
-  list.filter(panels, fn(p) { p.index == 0 })
 }
 
 fn get_all_contributions(panels: List(panel.Meta)) -> List(Contribution) {
@@ -106,22 +138,23 @@ fn get_all_contributions(panels: List(panel.Meta)) -> List(Contribution) {
   })
 }
 
+fn normalize_name(name: String) -> String {
+  string.trim(name) |> string.lowercase
+}
+
 fn get_contributor_info(
   target_name: String,
   panels: List(panel.Meta),
 ) -> Option(Contributor) {
-  wisp.log_debug("Looking up contributor: " <> target_name)
+  let normalized_target = normalize_name(target_name)
 
   let contributions =
     panels
     |> get_all_contributions
-    |> list.filter(fn(c) { c.name == target_name })
+    |> list.filter(fn(c) { normalize_name(c.name) == normalized_target })
 
   case contributions {
-    [] -> {
-      wisp.log_info("Contributor not found: " <> target_name)
-      None
-    }
+    [] -> None
     _ -> {
       let unique_panels =
         contributions
@@ -135,15 +168,6 @@ fn get_contributor_info(
         |> list.unique
         |> list.sort(compare_types)
 
-      wisp.log_debug(
-        "Found contributor "
-        <> target_name
-        <> " with "
-        <> int.to_string(list.length(unique_panels))
-        <> " contributions",
-      )
-
-      // Find the earliest contribution date
       let first_contribution_date = case
         contributions
         |> list.map(fn(c) { c.date })
@@ -153,8 +177,13 @@ fn get_contributor_info(
         [date, ..] -> date
       }
 
+      let original_name = case contributions {
+        [first, ..] -> first.name
+        [] -> target_name
+      }
+
       Some(Contributor(
-        name: target_name,
+        name: original_name,
         contributed_to: unique_panels,
         types_of_contributions: unique_types,
         first_contribution_date: first_contribution_date,
@@ -162,8 +191,6 @@ fn get_contributor_info(
     }
   }
 }
-
-// ---- Helper functions ----
 
 fn get_section_contributors(
   hoc: Hoc,
@@ -175,46 +202,6 @@ fn get_section_contributors(
   }
 }
 
-// ---- Rendering helpers ----
-
-fn render_section(title: String, contributors: List(String)) {
-  html.div([attribute.class("section")], [
-    html.h3([], [html.text(title)]),
-    html.ul(
-      [],
-      list.map(contributors, fn(name) {
-        html.li([], [
-          html.a([attribute.href("/hoc/" <> uri.percent_encode(name))], [
-            html.text(name),
-          ]),
-        ])
-      }),
-    ),
-  ])
-}
-
-fn type_to_singular(t: ContributionType) -> String {
-  case t {
-    Art -> "Art"
-    Writing -> "Writing"
-    Music -> "Music"
-    Misc -> "Misc."
-  }
-}
-
-/// Converts Unix timestamp to a human-readable year string.
-///
-/// Simple implementation that extracts the year from timestamp.
-/// In production, you might want to use a proper date library
-/// for more detailed formatting.
-///
-/// # Parameters
-///
-/// - `timestamp`: Unix timestamp in seconds
-///
-/// # Returns
-///
-/// String in format "YYYY-MM-DD"
 fn format_date(timestamp: Int) -> String {
   datetime.format(
     datetime.from_unix_milli(timestamp * 1000),
@@ -222,13 +209,25 @@ fn format_date(timestamp: Int) -> String {
   )
 }
 
+// ---- Rendering helpers ----
+
+fn render_contributor_list(contributors: List(String)) {
+  html.ul(
+    [attribute.class("list-clean list-grid")],
+    list.map(contributors, fn(name) {
+      html.li([], [
+        html.a([attribute.href("/hoc/" <> uri.percent_encode(name))], [
+          html.text(name),
+        ]),
+      ])
+    }),
+  )
+}
+
 // ---- Page builders ----
 
 pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
-  wisp.log_debug("Building Hall of Contributors page")
-
   let hoc = unique_contributors(panels)
-  let site_contributors = get_site_contributors(panels)
 
   let total_contributors =
     hoc.sections
@@ -236,104 +235,52 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
     |> list.unique
     |> list.length
 
-  wisp.log_info(
-    "Hall of Contributors: "
-    <> int.to_string(total_contributors)
-    <> " unique contributors across "
-    <> int.to_string(list.length(panels) - list.length(site_contributors))
-    <> " content panels",
-  )
-
-  let head = [html.title([], "The Hall of Contributors")]
+  let head = [html.title([], "Hall of Contributors")]
 
   let css = [
-    css.global(".section", [
-      css.background(section_bg),
-      css.height_("auto"),
-      css.padding(length.pt(10)),
-      css.margin_top(length.pt(10)),
-      css.margin_bottom(length.pt(10)),
-    ]),
-
-    css.global(".title", [
-      css.width(length.percent(100)),
+    css.global(".hoc-stats", [
       css.text_align("center"),
       css.margin_bottom(length.pt(20)),
     ]),
-    css.global(".section h3", [
-      css.margin_top(length.px(0)),
-      css.margin_bottom(length.pt(10)),
-      css.color("#333333"),
-    ]),
-    css.global(".section ul", [
-      css.margin(length.px(0)),
-      css.padding_left(length.pt(15)),
-      css.list_style("disc"),
-      css.column_count("3"),
-      css.column_gap(length.pt(20)),
-      css.media(media.max_width(length.px(1024)), [
-        css.column_count("2"),
-      ]),
-      css.media(media.max_width(length.px(600)), [
-        css.column_count("1"),
-        css.padding_left(length.pt(10)),
-        css.column_gap(length.pt(10)),
-      ]),
-    ]),
-    css.global(".hoc_content", [
-      css.flex_direction("column"),
-      css.flex("1"),
-    ]),
-    css.global(".sections", [
-      css.padding(length.pt(10)),
-      css.width_("100%"),
-      css.media(media.max_width(length.px(600)), [css.width_("auto")]),
-    ]),
   ]
-
-  let site_section = case site_contributors {
-    [] -> []
-    _ -> [
-      html.div([attribute.class("section")], [
-        html.h3([], [html.text("🏗️ Site Contributors")]),
-        html.p([], [
-          html.text(
-            "Special thanks to those who help build and maintain the Homeserve platform itself.",
-          ),
-        ]),
-        html.div(
-          [],
-          list.map(site_contributors, fn(panel) {
-            html.div([], [
-              html.h3([], [html.text(panel.title)]),
-              html.p([], [
-                html.text(
-                  "Development, infrastructure, design, and community support",
-                ),
-              ]),
-            ])
-          }),
-        ),
-      ]),
-    ]
-  }
-
-  let sections_content = [
-    html.div([], [
-      html.h1([attribute.style("text-align", "center")], [
-        html.text("Volunteers & Contributors"),
-      ]),
-    ]),
-    render_section("Artists", get_section_contributors(hoc, Art)),
-    render_section("Writers", get_section_contributors(hoc, Writing)),
-    render_section("Musicians", get_section_contributors(hoc, Music)),
-    render_section("Misc.", get_section_contributors(hoc, Misc)),
-  ]
-
-  let sections_with_site = list.append(sections_content, site_section)
 
   let body = [
-    html.div([attribute.class("sections")], sections_with_site),
+    html.div([attribute.class("page-container box-dark")], [
+      html.h1([attribute.class("heading-bordered text-center")], [
+        html.text("HALL OF CONTRIBUTORS"),
+      ]),
+      html.p([attribute.class("hoc-stats text-muted")], [
+        html.text(int.to_string(total_contributors) <> " CONTRIBUTORS"),
+      ]),
+      html.div([attribute.class("box")], [
+        html.h2([attribute.class("heading-bordered")], [
+          html.text(type_to_label(Art)),
+        ]),
+        html.hr([]),
+        render_contributor_list(get_section_contributors(hoc, Art)),
+      ]),
+      html.div([attribute.class("box")], [
+        html.h2([attribute.class("heading-bordered")], [
+          html.text(type_to_label(Writing)),
+        ]),
+        html.hr([]),
+        render_contributor_list(get_section_contributors(hoc, Writing)),
+      ]),
+      html.div([attribute.class("box")], [
+        html.h2([attribute.class("heading-bordered")], [
+          html.text(type_to_label(Music)),
+        ]),
+        html.hr([]),
+        render_contributor_list(get_section_contributors(hoc, Music)),
+      ]),
+      html.div([attribute.class("box")], [
+        html.h2([attribute.class("heading-bordered")], [
+          html.text(type_to_label(Misc)),
+        ]),
+        html.hr([]),
+        render_contributor_list(get_section_contributors(hoc, Misc)),
+      ]),
+    ]),
   ]
 
   base.Page(head:, css:, body:)
@@ -342,165 +289,135 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
 pub fn build_contributor(
   contributor: String,
   panels: List(panel.Meta),
+  couch_config: couchdb.CouchConfig,
 ) -> base.Page {
-  wisp.log_debug("Building contributor page for: " <> contributor)
-
-  // Load volunteers data
-  let volunteers_data = case volunteers.load() {
-    Ok(data) -> data
-    Error(_) -> []
+  let volunteer_info = case db.load_volunteer(couch_config, contributor) {
+    Ok(volunteer) -> Some(volunteer)
+    Error(_) -> None
   }
 
-  let volunteer_info = volunteers.find_volunteer(volunteers_data, contributor)
-
   case get_contributor_info(contributor, panels) {
-    None -> {
-      wisp.log_warning(
-        "Contributor page requested but not found: " <> contributor,
-      )
-      errors.build_error(404, "Contributor not found")
-    }
+    None -> errors.build_error(404, "Contributor not found")
     Some(stats) -> {
-      wisp.log_debug(
-        "Rendering contributor page for "
-        <> contributor
-        <> " with "
-        <> int.to_string(list.length(stats.contributed_to))
-        <> " panels",
-      )
-
       let head = [html.title([], "Contributor: " <> contributor)]
 
       let css = [
-        css.global(".contributor", [
-          css.display("flex"),
-          css.flex("1"),
-          css.flex_direction("row"),
-          css.padding(length.pt(10)),
-          css.media(media.max_width(length.px(768)), [
-            css.flex_direction("column"),
-          ]),
+        css.global(".contributor-header", [
+          css.margin_bottom(length.pt(15)),
+          css.padding_bottom(length.pt(10)),
         ]),
-        css.global(".contributor_main", [
+        css.global(".contributor-stats", [
           css.display("flex"),
-          css.flex("1"),
-          css.flex_direction("column"),
-          css.max_width(length.percent(50)),
-          css.margin(length.pt(10)),
-          css.padding(length.pt(10)),
-          css.background(section_bg),
-          css.media(media.max_width(length.px(768)), [
-            css.max_width(length.percent(100)),
-            css.height_("auto"),
-          ]),
+          css.gap(length.px(20)),
+          css.flex_wrap("wrap"),
         ]),
-        css.global(".contributor_side", [
-          css.width(length.percent(50)),
-          css.margin(length.pt(10)),
-          css.padding(length.pt(10)),
-          css.background(section_bg),
-          css.media(media.max_width(length.px(768)), [
-            css.width_("auto"),
-            css.height_("auto"),
-          ]),
+        css.global(".volunteer-info", [
+          css.margin_top(length.pt(15)),
+          css.padding_top(length.pt(10)),
         ]),
       ]
 
-      // Build volunteer section if available
       let volunteer_section = case volunteer_info {
         Some(volunteer) -> [
-          html.div(
-            [
-              attribute.styles([
-                #("margin-top", "20px"),
-                #("padding-top", "20px"),
-                #("border-top", "1px solid #ccc"),
-              ]),
-            ],
-            [
-              html.h3([], [html.text("Volunteer Information")]),
-              html.p([], [html.text(volunteer.bio)]),
-              ..case volunteer.social_links {
-                [] -> []
-                links -> [
-                  html.h4([], [html.text("Links:")]),
-                  html.ul(
-                    [],
-                    list.map(links, fn(link) {
-                      html.li([], [
-                        html.a(
-                          [attribute.href(link), attribute.target("_blank")],
-                          [
-                            html.text(link),
-                          ],
-                        ),
-                      ])
-                    }),
-                  ),
-                ]
-              }
-            ],
-          ),
+          html.div([attribute.class("volunteer-info")], [
+            html.h3([attribute.class("heading-bordered")], [
+              html.text("VOLUNTEER INFO"),
+            ]),
+            html.p([], [html.text(volunteer.bio)]),
+            case volunteer.social_links {
+              [] -> element.none()
+              links ->
+                html.ul(
+                  [attribute.class("list-clean")],
+                  list.map(links, fn(link) {
+                    html.li([], [
+                      html.a([attribute.href(link)], [html.text(link)]),
+                    ])
+                  }),
+                )
+            },
+          ]),
         ]
         None -> []
       }
 
       let body = [
-        html.div([attribute.class("contributor")], [
-          html.div([attribute.class("contributor_main")], [
+        html.div([attribute.class("page-container box")], [
+          html.div([attribute.class("contributor-header")], [
             html.h1([], [html.text(contributor)]),
-            html.p([], [
-              html.text(
-                "Total Contributions: "
-                <> int.to_string(list.length(stats.contributed_to)),
-              ),
+            html.div([attribute.class("contributor-stats text-muted")], [
+              html.span([], [
+                html.text(
+                  "CONTRIBUTIONS: "
+                  <> int.to_string(list.length(stats.contributed_to)),
+                ),
+              ]),
+              html.span([], [
+                html.text(
+                  "TYPES: "
+                  <> string.join(
+                    list.map(stats.types_of_contributions, type_to_singular),
+                    ", ",
+                  ),
+                ),
+              ]),
+              html.span([], [
+                html.text(
+                  "SINCE: " <> format_date(stats.first_contribution_date),
+                ),
+              ]),
             ]),
-            html.p([], [
-              html.text(
-                "Types of Contribution: "
-                <> stats.types_of_contributions
-                |> list.map(type_to_singular)
-                |> string.join(", "),
-              ),
-            ]),
-            html.p([], [
-              html.text(
-                "First Contribution: "
-                <> format_date(stats.first_contribution_date),
-              ),
-            ]),
-            ..volunteer_section
           ]),
-          html.div([attribute.class("contributor_side")], [
-            html.h2([], [html.text("Panels Contributed:")]),
-            html.ul(
-              [],
-              list.filter_map(stats.contributed_to, fn(panel_index) {
-                case panel.decode_meta(panel_index) {
-                  Error(_) -> {
-                    wisp.log_warning(
-                      "Failed to decode panel meta for index "
-                      <> int.to_string(panel_index)
-                      <> " while building contributor page",
-                    )
-                    Error(Nil)
+          html.div([attribute.class("grid-2")], [
+            html.div([attribute.class("box-inner")], [
+              html.h2([attribute.class("heading-bordered")], [html.text("INFO")]),
+              html.p([], [
+                html.text(
+                  "Total panels contributed to: "
+                  <> int.to_string(list.length(stats.contributed_to)),
+                ),
+              ]),
+              html.p([], [
+                html.text(
+                  "First contribution: "
+                  <> format_date(stats.first_contribution_date),
+                ),
+              ]),
+              ..volunteer_section
+            ]),
+            html.div([attribute.class("box-inner")], [
+              html.h2([attribute.class("heading-bordered")], [
+                html.text("PANELS"),
+              ]),
+              html.ul(
+                [attribute.class("list-clean list-divided scrollable")],
+                list.filter_map(stats.contributed_to, fn(panel_index) {
+                  case panel.decode_meta(panel_index) {
+                    Error(_) -> Error(Nil)
+                    Ok(panel_meta) ->
+                      Ok(
+                        html.li([], [
+                          html.a(
+                            [
+                              attribute.href(
+                                "/read/" <> int.to_string(panel_index),
+                              ),
+                            ],
+                            [
+                              html.text(
+                                "#"
+                                <> int.to_string(panel_index)
+                                <> " "
+                                <> panel_meta.title,
+                              ),
+                            ],
+                          ),
+                        ]),
+                      )
                   }
-                  Ok(panel_meta) ->
-                    Ok(
-                      html.li([], [
-                        html.a(
-                          [
-                            attribute.href(
-                              "/read/" <> int.to_string(panel_index),
-                            ),
-                          ],
-                          [html.text(panel_meta.title)],
-                        ),
-                      ]),
-                    )
-                }
-              }),
-            ),
+                }),
+              ),
+            ]),
           ]),
         ]),
       ]

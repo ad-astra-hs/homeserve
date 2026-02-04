@@ -1,6 +1,5 @@
-import gleam/int
-
 import gleam/erlang/process
+import gleam/int
 
 import mist
 import wisp
@@ -11,21 +10,15 @@ import homeserve/panel_cache
 import homeserve/router
 
 /// Application entry point that starts the homeserve web server.
-/// 
-/// This function:
-/// - Configures logging
-/// - Loads application configuration
-/// - Starts the panel cache actor
-/// - Starts the HTTP server on configured port
-/// 
-/// The server will run until interrupted.
 pub fn main() {
   wisp.configure_logger()
-
   wisp.log_info("Starting homeserve server...")
 
   // Load configuration
   let cfg = config.load()
+
+  // Note: gleam_httpc requires inets to be started automatically by the runtime.
+  // CouchDB should be started before this application to ensure panels can be loaded.
 
   // Start the panel cache with config
   case panel_cache.start(cfg) {
@@ -58,6 +51,12 @@ pub fn main() {
             <> ":"
             <> int.to_string(cfg.server.port),
           )
+          wisp.log_info("")
+          wisp.log_info("IMPORTANT: Make sure CouchDB is running!")
+          wisp.log_info(
+            "  docker run -d -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:latest",
+          )
+          wisp.log_info("")
           process.sleep_forever()
         }
       }

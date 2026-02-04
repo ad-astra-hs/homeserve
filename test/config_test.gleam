@@ -29,12 +29,6 @@ pub fn default_config_has_5_second_watch_interval_test() {
   cfg.cache.watch_interval_seconds |> should.equal(5)
 }
 
-pub fn default_config_has_pages_directory_test() {
-  let cfg = config.default_config()
-
-  cfg.paths.pages_directory |> should.equal("./pages")
-}
-
 pub fn default_config_has_assets_directory_test() {
   let cfg = config.default_config()
 
@@ -71,7 +65,6 @@ pub fn load_from_example_toml_test() {
   cfg.server.host |> should.equal("0.0.0.0")
   cfg.cache.ttl_minutes |> should.equal(60)
   cfg.cache.watch_interval_seconds |> should.equal(5)
-  cfg.paths.pages_directory |> should.equal("./pages")
   cfg.paths.assets_directory |> should.equal("./priv/static/assets")
 }
 
@@ -106,14 +99,42 @@ pub fn cache_watch_interval_is_positive_test() {
 
 // ---- Paths Config Tests ----
 
-pub fn pages_directory_is_not_empty_test() {
-  let cfg = config.default_config()
-
-  string.length(cfg.paths.pages_directory) |> should.not_equal(0)
-}
-
 pub fn assets_directory_is_not_empty_test() {
   let cfg = config.default_config()
 
   string.length(cfg.paths.assets_directory) |> should.not_equal(0)
+}
+
+// ---- Admin Config Tests ----
+
+pub fn default_admin_token_is_set_test() {
+  let cfg = config.default_config()
+
+  string.length(cfg.admin.token) |> should.not_equal(0)
+}
+
+pub fn default_admin_token_is_changeme_test() {
+  let cfg = config.default_config()
+
+  cfg.admin.token |> should.equal("changeme")
+}
+
+// ---- Contact Config Tests ----
+
+pub fn default_contact_email_is_set_test() {
+  let cfg = config.default_config()
+
+  string.length(cfg.contact.email) |> should.not_equal(0)
+}
+
+pub fn default_contact_email_is_example_test() {
+  let cfg = config.default_config()
+
+  cfg.contact.email |> should.equal("admin@example.com")
+}
+
+pub fn load_from_example_toml_has_contact_email_test() {
+  let cfg = config.load_from("./homeserve.example.toml")
+
+  cfg.contact.email |> should.equal("admin@example.com")
 }
