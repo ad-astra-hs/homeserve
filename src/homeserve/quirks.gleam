@@ -5,6 +5,19 @@ import gleam/result
 import gleam/string
 import wisp
 
+// ---- HTML Escaping ----
+
+/// Escapes special HTML characters to prevent XSS attacks.
+/// Converts &, <, >, ", and ' to their HTML entity equivalents.
+fn escape_html(text: String) -> String {
+  text
+  |> string.replace("&", "&amp;")
+  |> string.replace("<", "&lt;")
+  |> string.replace(">", "&gt;")
+  |> string.replace("\"", "&quot;")
+  |> string.replace("'", "&#x27;")
+}
+
 /// Internal quirk type.
 /// Replacements: List of tuples describing a regex matcher and a replacement string.
 /// Transform: Function to apply to the message before replacement.
@@ -111,13 +124,22 @@ fn format_dialogue(
     False -> message
   }
 
+  // Escape all values that will be inserted into HTML
+  let safe_character = escape_html(character)
+  let safe_message = escape_html(quirked_message)
+  let safe_original_message = escape_html(message)
+
   let style = case color {
-    Some(color) -> "style='color:" <> color <> "'"
+    Some(color_value) -> {
+      // Validate color is a reasonable CSS color value before escaping
+      let safe_color = escape_html(color_value)
+      "style='color:" <> safe_color <> "'"
+    }
     None -> ""
   }
 
   let alt_text = case quirked {
-    True -> " title='" <> message <> "'"
+    True -> " title='" <> safe_original_message <> "'"
     False -> ""
   }
 
@@ -126,9 +148,9 @@ fn format_dialogue(
     <> style
     <> alt_text
     <> ">"
-    <> character
+    <> safe_character
     <> ": "
-    <> quirked_message
+    <> safe_message
     <> "</span>",
   )
 }

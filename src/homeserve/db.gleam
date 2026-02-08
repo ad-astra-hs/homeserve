@@ -150,28 +150,24 @@ fn decode_media(
 
 fn decode_credits(dict: Dict(String, Dynamic)) -> Result(Credits, Nil) {
   use artists_dyn <- result.try(dict.get(dict, "artists"))
-  let artists = case decode.run(artists_dyn, decode.list(decode.string)) {
-    Ok(list) -> list
-    Error(_) -> []
-  }
+  let artists =
+    decode.run(artists_dyn, decode.list(decode.string))
+    |> result.unwrap([])
 
   use writers_dyn <- result.try(dict.get(dict, "writers"))
-  let writers = case decode.run(writers_dyn, decode.list(decode.string)) {
-    Ok(list) -> list
-    Error(_) -> []
-  }
+  let writers =
+    decode.run(writers_dyn, decode.list(decode.string))
+    |> result.unwrap([])
 
   use musicians_dyn <- result.try(dict.get(dict, "musicians"))
-  let musicians = case decode.run(musicians_dyn, decode.list(decode.string)) {
-    Ok(list) -> list
-    Error(_) -> []
-  }
+  let musicians =
+    decode.run(musicians_dyn, decode.list(decode.string))
+    |> result.unwrap([])
 
   use misc_dyn <- result.try(dict.get(dict, "misc"))
-  let misc = case decode.run(misc_dyn, decode.list(decode.string)) {
-    Ok(list) -> list
-    Error(_) -> []
-  }
+  let misc =
+    decode.run(misc_dyn, decode.list(decode.string))
+    |> result.unwrap([])
 
   Ok(Credits(
     artists: artists,
@@ -216,25 +212,17 @@ fn decode_meta(dict: Dict(String, Dynamic)) -> Result(Meta, Nil) {
 
   use credits <- result.try(decode_credits(credits_dict))
 
-  let css = case dict.get(dict, "css") {
-    Ok(dyn) -> {
-      case decode.run(dyn, decode.list(decode.string)) {
-        Ok(list) -> list
-        Error(_) -> []
-      }
-    }
-    Error(_) -> []
-  }
+  let css =
+    dict.get(dict, "css")
+    |> result.unwrap(dynamic.from([]))
+    |> decode.run(decode.list(decode.string))
+    |> result.unwrap([])
 
-  let js = case dict.get(dict, "js") {
-    Ok(dyn) -> {
-      case decode.run(dyn, decode.list(decode.string)) {
-        Ok(list) -> list
-        Error(_) -> []
-      }
-    }
-    Error(_) -> []
-  }
+  let js =
+    dict.get(dict, "js")
+    |> result.unwrap(dynamic.from([]))
+    |> decode.run(decode.list(decode.string))
+    |> result.unwrap([])
 
   use date_dyn <- result.try(dict.get(dict, "date"))
   use date <- result.try(
@@ -242,15 +230,11 @@ fn decode_meta(dict: Dict(String, Dynamic)) -> Result(Meta, Nil) {
     |> result.map_error(fn(_) { Nil }),
   )
 
-  let draft = case dict.get(dict, "draft") {
-    Ok(dyn) -> {
-      case decode.run(dyn, decode.bool) {
-        Ok(b) -> b
-        Error(_) -> False
-      }
-    }
-    Error(_) -> False
-  }
+  let draft =
+    dict.get(dict, "draft")
+    |> result.unwrap(dynamic.from(False))
+    |> decode.run(decode.bool)
+    |> result.unwrap(False)
 
   Ok(Meta(
     index: index,
@@ -289,27 +273,60 @@ fn decode_volunteer(dict: Dict(String, Dynamic)) -> Result(Volunteer, Nil) {
     |> result.map_error(fn(_) { Nil }),
   )
 
-  let social_links = case dict.get(dict, "social_links") {
-    Ok(links_dyn) -> {
-      case decode.run(links_dyn, decode.list(decode.string)) {
-        Ok(list) -> list
-        Error(_) -> []
-      }
-    }
-    Error(_) -> []
-  }
+  let social_links =
+    dict.get(dict, "social_links")
+    |> result.unwrap(dynamic.from([]))
+    |> decode.run(decode.list(decode.string))
+    |> result.unwrap([])
 
-  let bio = case dict.get(dict, "bio") {
-    Ok(bio_dyn) -> {
-      case decode.run(bio_dyn, decode.string) {
-        Ok(b) -> b
-        Error(_) -> ""
-      }
-    }
-    Error(_) -> ""
-  }
+  let bio =
+    dict.get(dict, "bio")
+    |> result.unwrap(dynamic.from(""))
+    |> decode.run(decode.string)
+    |> result.unwrap("")
 
   Ok(Volunteer(name: name, social_links: social_links, bio: bio))
+}
+
+// ---- Internal Helpers ----
+
+/// Extracts the revision string from a document dictionary.
+/// Returns None if the revision field is missing or invalid.
+fn extract_revision(dict: Dict(String, Dynamic)) -> Option(String) {
+  case dict.get(dict, "_rev") {
+    Ok(rev_dyn) ->
+      decode.run(rev_dyn, decode.string)
+      |> option.from_result
+    Error(_) -> None
+  }
+}
+
+/// Fetches an existing document and extracts its revision.
+/// Returns None if the document doesn't exist or has no revision.
+fn get_existing_revision(config: CouchConfig, doc_id: String) -> Option(String) {
+  case couchdb.get_doc(config, doc_id) {
+    Ok(existing) -> extract_revision(existing)
+    Error(_) -> None
+  }
+}
+
+/// Requires an existing document and returns it with its revision.
+/// Returns an error if the document doesn't exist or has no valid revision.
+fn require_existing_doc(
+  config: CouchConfig,
+  doc_id: String,
+) -> Result(#(Dict(String, Dynamic), String), CouchError) {
+  case couchdb.get_doc(config, doc_id) {
+    Ok(existing) -> {
+      case extract_revision(existing) {
+        Some(rev) -> Ok(#(existing, rev))
+        None -> Error(couchdb.InvalidResponse("Missing or invalid _rev field"))
+      }
+    }
+    Error(couchdb.NotFound(_)) ->
+      Error(couchdb.NotFound("Document does not exist"))
+    Error(err) -> Error(err)
+  }
 }
 
 // ---- Panel Public API ----
@@ -369,28 +386,14 @@ pub fn load_meta(config: CouchConfig, index: Int) -> Result(Meta, ParseError) {
 }
 
 /// Saves a panel to CouchDB
+/// If the panel already exists, updates it with the existing revision.
 pub fn save_panel(
   config: CouchConfig,
   panel: Panel,
 ) -> Result(String, CouchError) {
   let doc_id = index_to_id(panel.meta.index)
   let doc = encode_panel(panel)
-
-  // Try to get existing revision for update
-  let rev = case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case dict.get(existing, "_rev") {
-        Ok(rev_dyn) -> {
-          case decode.run(rev_dyn, decode.string) {
-            Ok(r) -> Some(r)
-            Error(_) -> None
-          }
-        }
-        Error(_) -> None
-      }
-    }
-    Error(_) -> None
-  }
+  let rev = get_existing_revision(config, doc_id)
 
   couchdb.put_doc(config, doc_id, doc, rev)
 }
@@ -468,54 +471,18 @@ pub fn update_panel(
   panel: Panel,
 ) -> Result(String, CouchError) {
   let doc_id = index_to_id(panel.meta.index)
+  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
 
-  // Get existing document to get revision
-  case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case dict.get(existing, "_rev") {
-        Ok(rev_dyn) -> {
-          case decode.run(rev_dyn, decode.string) {
-            Ok(rev) -> {
-              let doc = encode_panel(panel)
-              couchdb.put_doc(config, doc_id, doc, Some(rev))
-            }
-            Error(_) ->
-              Error(couchdb.InvalidResponse("Invalid revision format"))
-          }
-        }
-        Error(_) -> Error(couchdb.InvalidResponse("Missing _rev field"))
-      }
-    }
-    Error(couchdb.NotFound(_)) ->
-      Error(couchdb.NotFound("Panel does not exist"))
-    Error(err) -> Error(err)
-  }
+  let doc = encode_panel(panel)
+  couchdb.put_doc(config, doc_id, doc, Some(rev))
 }
 
 /// Deletes a panel from CouchDB
 pub fn delete_panel(config: CouchConfig, index: Int) -> Result(Nil, CouchError) {
   let doc_id = index_to_id(index)
+  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
 
-  // Get existing document to get revision
-  case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case dict.get(existing, "_rev") {
-        Ok(rev_dyn) -> {
-          case decode.run(rev_dyn, decode.string) {
-            Ok(rev) -> {
-              couchdb.delete_doc(config, doc_id, rev)
-            }
-            Error(_) ->
-              Error(couchdb.InvalidResponse("Invalid revision format"))
-          }
-        }
-        Error(_) -> Error(couchdb.InvalidResponse("Missing _rev field"))
-      }
-    }
-    Error(couchdb.NotFound(_)) ->
-      Error(couchdb.NotFound("Panel does not exist"))
-    Error(err) -> Error(err)
-  }
+  couchdb.delete_doc(config, doc_id, rev)
 }
 
 // ---- Volunteer Public API ----
@@ -548,28 +515,14 @@ pub fn load_volunteer(
 }
 
 /// Saves a volunteer to CouchDB
+/// If the volunteer already exists, updates it with the existing revision.
 pub fn save_volunteer(
   config: CouchConfig,
   volunteer: Volunteer,
 ) -> Result(String, CouchError) {
   let doc_id = volunteer_name_to_id(volunteer.name)
   let doc = encode_volunteer(volunteer)
-
-  // Try to get existing revision for update
-  let rev = case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case dict.get(existing, "_rev") {
-        Ok(rev_dyn) -> {
-          case decode.run(rev_dyn, decode.string) {
-            Ok(r) -> Some(r)
-            Error(_) -> None
-          }
-        }
-        Error(_) -> None
-      }
-    }
-    Error(_) -> None
-  }
+  let rev = get_existing_revision(config, doc_id)
 
   couchdb.put_doc(config, doc_id, doc, rev)
 }
@@ -617,28 +570,10 @@ pub fn update_volunteer(
   volunteer: Volunteer,
 ) -> Result(String, CouchError) {
   let doc_id = volunteer_name_to_id(volunteer.name)
+  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
 
-  // Get existing document to get revision
-  case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case dict.get(existing, "_rev") {
-        Ok(rev_dyn) -> {
-          case decode.run(rev_dyn, decode.string) {
-            Ok(rev) -> {
-              let doc = encode_volunteer(volunteer)
-              couchdb.put_doc(config, doc_id, doc, Some(rev))
-            }
-            Error(_) ->
-              Error(couchdb.InvalidResponse("Invalid revision format"))
-          }
-        }
-        Error(_) -> Error(couchdb.InvalidResponse("Missing _rev field"))
-      }
-    }
-    Error(couchdb.NotFound(_)) ->
-      Error(couchdb.NotFound("Volunteer does not exist"))
-    Error(err) -> Error(err)
-  }
+  let doc = encode_volunteer(volunteer)
+  couchdb.put_doc(config, doc_id, doc, Some(rev))
 }
 
 /// Deletes a volunteer from CouchDB
@@ -647,27 +582,9 @@ pub fn delete_volunteer(
   name: String,
 ) -> Result(Nil, CouchError) {
   let doc_id = volunteer_name_to_id(name)
+  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
 
-  // Get existing document to get revision
-  case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case dict.get(existing, "_rev") {
-        Ok(rev_dyn) -> {
-          case decode.run(rev_dyn, decode.string) {
-            Ok(rev) -> {
-              couchdb.delete_doc(config, doc_id, rev)
-            }
-            Error(_) ->
-              Error(couchdb.InvalidResponse("Invalid revision format"))
-          }
-        }
-        Error(_) -> Error(couchdb.InvalidResponse("Missing _rev field"))
-      }
-    }
-    Error(couchdb.NotFound(_)) ->
-      Error(couchdb.NotFound("Volunteer does not exist"))
-    Error(err) -> Error(err)
-  }
+  couchdb.delete_doc(config, doc_id, rev)
 }
 
 /// Gets volunteer changes since a sequence number

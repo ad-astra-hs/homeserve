@@ -171,20 +171,30 @@ fn make_request(
   }
 
   // Try to send the request and handle errors gracefully
-  // NOTE: gleam_httpc may crash on certain errors (Shutdown, etc.) instead of returning Error
-  // This is a known limitation - ensure CouchDB is running before starting the app
   case httpc.send(req) {
     Ok(resp) -> Ok(resp)
-    Error(httpc.FailedToConnect(_, _)) ->
+    Error(httpc.FailedToConnect(ip4_err, ip6_err)) ->
       Error(ConnectionError(
-        "Failed to connect to CouchDB - is it running on "
+        "Failed to connect to CouchDB - IPv4: "
+        <> format_connect_error(ip4_err)
+        <> ", IPv6: "
+        <> format_connect_error(ip6_err)
+        <> " - is it running on "
         <> config.host
         <> ":"
         <> int.to_string(config.port)
-        <> "?",
+        <> "? Also ensure you have set COUCHDB_USER and COUCHDB_PASSWORD environment variables in the Docker container.",
       ))
     Error(httpc.InvalidUtf8Response) ->
-      Error(ConnectionError("Invalid response from CouchDB"))
+      Error(ConnectionError("Invalid UTF-8 response from CouchDB"))
+  }
+}
+
+fn format_connect_error(err: httpc.ConnectError) -> String {
+  case err {
+    httpc.Posix(code) -> "POSIX error: " <> code
+    httpc.TlsAlert(code, detail) ->
+      "TLS error: " <> code <> " (" <> detail <> ")"
   }
 }
 

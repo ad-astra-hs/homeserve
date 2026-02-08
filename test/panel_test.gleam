@@ -1,7 +1,8 @@
 import gleam/string
 import gleeunit/should
 
-import homeserve/pages/panel
+import homeserve/couchdb
+import homeserve/pages/panel/loader
 import homeserve/pages/panel/types.{DatabaseError, FileNotFound}
 
 // ---- Panel Loading Tests ----
@@ -12,7 +13,7 @@ import homeserve/pages/panel/types.{DatabaseError, FileNotFound}
 pub fn load_panel_not_found_test() {
   // This test should return FileNotFound when CouchDB is running,
   // or DatabaseError when CouchDB is not available
-  let result = panel.load_panel(999_999)
+  let result = loader.load_panel(couchdb.default_config(), 999_999)
 
   result |> should.be_error
 
@@ -28,7 +29,7 @@ pub fn load_panel_not_found_test() {
 }
 
 pub fn decode_meta_not_found_test() {
-  let result = panel.decode_meta(999_999)
+  let result = loader.decode_meta(couchdb.default_config(), 999_999)
   result |> should.be_error
 }
 

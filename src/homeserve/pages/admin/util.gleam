@@ -1,16 +1,21 @@
 /// Admin Utilities
 ///
-/// Form parsing, input validation, and panel building utilities.
-import gleam/erlang
+/// Form parsing, input validation, page rendering, and panel building utilities.
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import homeserve/base
+import homeserve/config.{type Config}
+import homeserve/utils
 
+import homeserve/pages/admin/auth
 import homeserve/pages/panel/types.{
   type Panel, Credits, Image, Media, Meta, Panel as PanelConstructor, Video,
 }
 import homeserve/security
-import wisp.{type FormData}
+import lustre/attribute
+import lustre/element/html
+import wisp.{type FormData, type Request, type Response}
 
 /// Maximum lengths for form fields
 const max_title_length = 200
@@ -33,7 +38,7 @@ pub type ValidationError {
 
 /// Get current Unix timestamp in seconds.
 pub fn current_timestamp() -> Int {
-  erlang.system_time(erlang.Second)
+  utils.current_time_seconds()
 }
 
 /// Get form field value or empty string
@@ -270,4 +275,72 @@ pub fn format_validation_errors(errors: List(ValidationError)) -> String {
     }
   })
   |> string.join("; ")
+}
+
+// ---- Page Rendering Helpers ----
+
+/// Renders an error page response.
+pub fn render_error_page(
+  message: String,
+  links: List(#(String, String)),
+  status: Int,
+) -> Response {
+  let link_elements =
+    list.map(links, fn(link) {
+      let #(url, text) = link
+      html.h2([], [
+        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
+          html.text("> " <> text),
+        ]),
+      ])
+    })
+
+  let page =
+    base.Page(head: [html.title([], "Error | Homeserve")], css: [], body: [
+      html.div([attribute.class("dead-center")], [
+        html.h1([], [html.text("ERROR")]),
+        html.p([], [html.text(message)]),
+        ..link_elements
+      ]),
+    ])
+  wisp.response(status) |> wisp.html_body(base.render_page(page))
+}
+
+/// Renders a success page response.
+pub fn render_success_page(
+  message: String,
+  links: List(#(String, String)),
+  status: Int,
+) -> Response {
+  let link_elements =
+    list.map(links, fn(link) {
+      let #(url, text) = link
+      html.h2([], [
+        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
+          html.text("> " <> text),
+        ]),
+      ])
+    })
+
+  let page =
+    base.Page(head: [html.title([], "Success | Homeserve")], css: [], body: [
+      html.div([attribute.class("dead-center")], [
+        html.h1([], [html.text("SUCCESS")]),
+        html.p([], [html.text(message)]),
+        ..link_elements
+      ]),
+    ])
+  wisp.response(status) |> wisp.html_body(base.render_page(page))
+}
+
+/// Requires authentication or renders login page.
+pub fn require_auth(
+  req: Request,
+  cfg: Config,
+  handler: fn(String) -> Response,
+) -> Response {
+  case auth.is_authenticated(req, cfg) {
+    False -> auth.render_login_page()
+    True -> handler(auth.get_token_string(req))
+  }
 }

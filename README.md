@@ -1,6 +1,6 @@
 # Homeserve 🏠
 
-A selfhosted webcomic server built with Gleam. Stores panels in CouchDB for reliability and serves them with smart caching.
+A selfhosted webcomic server built with Gleam. Stores panels in CouchDB for reliability and serves them with simplicity.
 
 ## What it does
 
@@ -108,7 +108,6 @@ Volunteer profiles appear on contributor pages (`/hoc/<name>`) when a contributo
 
 See `homeserve.example.toml` for all available options including:
 - Server port and host
-- Cache TTL and watch intervals
 - CouchDB connection settings
 - Admin authentication token
 - Contact email (for privacy policy)
@@ -156,7 +155,6 @@ Users still enter the plaintext token, but the config only stores the hash.
 Built with Gleam → Erlang/BEAM for concurrency and reliability.
 
 - **CouchDB**: Stores panel and volunteer documents
-- **Panel Cache**: In-memory cache with change feed monitoring for auto-refresh
 - **Bcrypt**: Secure password hashing for admin tokens
 - **Lustre**: HTML rendering with type-safe CSS
 

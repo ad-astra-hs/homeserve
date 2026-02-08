@@ -17,18 +17,6 @@ pub fn default_config_has_host_all_interfaces_test() {
   cfg.server.host |> should.equal("0.0.0.0")
 }
 
-pub fn default_config_has_60_minute_ttl_test() {
-  let cfg = config.default_config()
-
-  cfg.cache.ttl_minutes |> should.equal(60)
-}
-
-pub fn default_config_has_5_second_watch_interval_test() {
-  let cfg = config.default_config()
-
-  cfg.cache.watch_interval_seconds |> should.equal(5)
-}
-
 pub fn default_config_has_assets_directory_test() {
   let cfg = config.default_config()
 
@@ -52,7 +40,6 @@ pub fn load_from_nonexistent_file_returns_defaults_test() {
   // Should fall back to defaults
   cfg.server.port |> should.equal(8000)
   cfg.server.host |> should.equal("0.0.0.0")
-  cfg.cache.ttl_minutes |> should.equal(60)
 }
 
 // ---- Config from example homeserve.toml ----
@@ -63,8 +50,6 @@ pub fn load_from_example_toml_test() {
   // The example config has these values
   cfg.server.port |> should.equal(8000)
   cfg.server.host |> should.equal("0.0.0.0")
-  cfg.cache.ttl_minutes |> should.equal(60)
-  cfg.cache.watch_interval_seconds |> should.equal(5)
   cfg.paths.assets_directory |> should.equal("./priv/static/assets")
 }
 
@@ -81,20 +66,6 @@ pub fn server_config_port_is_valid_range_test() {
 
   // Port should be in valid range (1-65535)
   should.be_true(cfg.server.port >= 1 && cfg.server.port <= 65_535)
-}
-
-// ---- Cache Config Tests ----
-
-pub fn cache_ttl_is_positive_test() {
-  let cfg = config.default_config()
-
-  should.be_true(cfg.cache.ttl_minutes > 0)
-}
-
-pub fn cache_watch_interval_is_positive_test() {
-  let cfg = config.default_config()
-
-  should.be_true(cfg.cache.watch_interval_seconds > 0)
 }
 
 // ---- Paths Config Tests ----

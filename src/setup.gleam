@@ -100,7 +100,7 @@ fn verify_database() {
         <> int.to_string(couch_config.port),
       )
       wisp.log_error(
-        "You can start CouchDB with: docker run -d -p 5984:5984 couchdb:latest",
+        "You can start CouchDB with: docker run -d -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:latest",
       )
       exit(1)
     }

@@ -1,21 +1,15 @@
 /// Health Check Module
 ///
 /// Provides comprehensive health checks for Homeserve and its dependencies.
-/// The health endpoint verifies:
-/// - CouchDB connectivity
-/// - Cache status
-/// - Overall application readiness
-import gleam/erlang
-import gleam/erlang/process.{type Subject}
+/// The health endpoint verifies CouchDB connectivity and overall application readiness.
 import gleam/http
-import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import homeserve/utils
 
 import homeserve/config.{type Config}
 import homeserve/couchdb
-import homeserve/panel_cache
 import wisp.{type Request, type Response}
 
 /// Overall health status of the application
@@ -32,7 +26,7 @@ pub type HealthStatus {
 
 /// Component health information
 pub type Components {
-  Components(couchdb: ComponentHealth, cache: ComponentHealth)
+  Components(couchdb: ComponentHealth)
 }
 
 /// Individual component health status
@@ -46,30 +40,22 @@ pub type ComponentHealth {
 }
 
 /// Performs a comprehensive health check
-pub fn check_health(
-  cfg: Config,
-  cache: Subject(panel_cache.CacheMessage),
-) -> HealthStatus {
-  let timestamp = current_time_seconds()
+pub fn check_health(cfg: Config) -> HealthStatus {
+  let timestamp = utils.current_time_seconds()
 
   // Check CouchDB
   let couchdb_health = check_couchdb(cfg)
 
-  // Check Cache
-  let cache_health = check_cache(cache)
-
-  // Determine overall status
-  let overall_status = case couchdb_health.status, cache_health.status {
-    "healthy", "healthy" -> "healthy"
-    "unhealthy", _ -> "unhealthy"
-    _, "unhealthy" -> "unhealthy"
-    _, _ -> "degraded"
+  // Determine overall status based on CouchDB health
+  let overall_status = case couchdb_health.status {
+    "healthy" -> "healthy"
+    _ -> "unhealthy"
   }
 
   HealthStatus(
     status: overall_status,
     timestamp: timestamp,
-    components: Components(couchdb: couchdb_health, cache: cache_health),
+    components: Components(couchdb: couchdb_health),
   )
 }
 
@@ -108,31 +94,6 @@ fn check_couchdb(cfg: Config) -> ComponentHealth {
   }
 }
 
-/// Check cache status
-fn check_cache(cache: Subject(panel_cache.CacheMessage)) -> ComponentHealth {
-  let health = panel_cache.get_health(cache)
-
-  let status = case health.is_healthy, health.is_ready {
-    True, True -> "healthy"
-    True, False -> "degraded"
-    False, _ -> "unhealthy"
-  }
-
-  let message = case health.is_ready {
-    True -> "Ready with " <> int.to_string(health.panel_count) <> " panels"
-    False -> "Not ready (empty cache)"
-  }
-
-  let details =
-    json.object([
-      #("panel_count", json.int(health.panel_count)),
-      #("is_ready", json.bool(health.is_ready)),
-      #("is_healthy", json.bool(health.is_healthy)),
-    ])
-
-  ComponentHealth(status: status, message: message, details: Some(details))
-}
-
 /// Encode health status to JSON
 fn encode_health(health: HealthStatus) -> json.Json {
   json.object([
@@ -145,7 +106,6 @@ fn encode_health(health: HealthStatus) -> json.Json {
 fn encode_components(components: Components) -> json.Json {
   json.object([
     #("couchdb", encode_component(components.couchdb)),
-    #("cache", encode_component(components.cache)),
   ])
 }
 
@@ -164,21 +124,15 @@ fn encode_component(component: ComponentHealth) -> json.Json {
 }
 
 /// Serve the health check endpoint
-pub fn serve_health(
-  req: Request,
-  cfg: Config,
-  cache: Subject(panel_cache.CacheMessage),
-) -> Response {
+pub fn serve_health(req: Request, cfg: Config) -> Response {
   use <- wisp.require_method(req, http.Get)
 
-  let health = check_health(cfg, cache)
+  let health = check_health(cfg)
   let json_body = encode_health(health) |> json.to_string_tree
 
   // Return appropriate HTTP status code
   let status_code = case health.status {
     "healthy" -> 200
-    "degraded" -> 200
-    // Still serving traffic, but with issues
     _ -> 503
     // Service Unavailable
   }
@@ -187,9 +141,4 @@ pub fn serve_health(
   |> wisp.set_header("content-type", "application/json")
   |> wisp.set_body(wisp.Text(json_body))
 }
-
 // ---- Helper Functions ----
-
-fn current_time_seconds() -> Int {
-  erlang.system_time(erlang.Second)
-}

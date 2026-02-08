@@ -388,10 +388,9 @@ fn apply_globals(
   stylesheet: sketch.StyleSheet,
   globals: List(css.Global),
 ) -> String {
-  case globals {
-    [] -> sketch.render(stylesheet)
-    [global, ..rest] -> apply_globals(sketch.global(stylesheet, global), rest)
-  }
+  globals
+  |> list.fold(stylesheet, sketch.global)
+  |> sketch.render
 }
 
 fn render_header() -> vnode.Element(String) {

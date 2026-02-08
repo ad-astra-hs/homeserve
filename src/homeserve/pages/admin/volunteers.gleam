@@ -11,7 +11,6 @@ import gleam/result
 import gleam/string
 import gleam/uri
 
-import lustre/attribute
 import lustre/element/html
 
 import homeserve/base
@@ -65,7 +64,7 @@ pub fn handle_create(
       let csrf_token = util.get_form_field(body, "csrf_token")
       case auth.validate_csrf_token(req, csrf_token) {
         False -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
             [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
             403,
@@ -75,7 +74,7 @@ pub fn handle_create(
           case build_volunteer_from_form(body) {
             Error(errors) -> {
               let error_msg = format_validation_errors(errors)
-              render_error_page(
+              util.render_error_page(
                 "Validation failed: " <> error_msg,
                 [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
                 400,
@@ -84,7 +83,7 @@ pub fn handle_create(
             Ok(volunteer) -> {
               case db.save_volunteer(couch_config, volunteer) {
                 Ok(_) -> {
-                  render_success_page(
+                  util.render_success_page(
                     "Volunteer \""
                       <> volunteer.name
                       <> "\" created successfully!",
@@ -102,7 +101,7 @@ pub fn handle_create(
                   )
                 }
                 Error(err) -> {
-                  render_error_page(
+                  util.render_error_page(
                     "Failed to save volunteer: " <> couchdb.error_to_string(err),
                     [
                       #(
@@ -145,7 +144,7 @@ pub fn serve_list(
           wisp.ok() |> wisp.html_body(base.render_page(page))
         }
         Error(err) -> {
-          render_error_page(
+          util.render_error_page(
             "Failed to load volunteers: " <> couchdb.error_to_string(err),
             [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
             500,
@@ -194,14 +193,14 @@ pub fn serve_edit(
           )
         }
         Error(volunteers.FileNotFound(_)) -> {
-          render_error_page(
+          util.render_error_page(
             "Volunteer \"" <> decoded_name <> "\" not found.",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
             404,
           )
         }
         Error(_) -> {
-          render_error_page(
+          util.render_error_page(
             "Failed to load volunteer \"" <> decoded_name <> "\"",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
             500,
@@ -230,7 +229,7 @@ pub fn handle_update(
       let csrf_token = util.get_form_field(body, "csrf_token")
       case auth.validate_csrf_token(req, csrf_token) {
         False -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
             403,
@@ -241,7 +240,7 @@ pub fn handle_update(
           case build_volunteer_from_form(body) {
             Error(errors) -> {
               let error_msg = format_validation_errors(errors)
-              render_error_page(
+              util.render_error_page(
                 "Validation failed: " <> error_msg,
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
                 400,
@@ -269,7 +268,7 @@ pub fn handle_update(
 
               case result {
                 Ok(_) -> {
-                  render_success_page(
+                  util.render_success_page(
                     "Volunteer \""
                       <> volunteer.name
                       <> "\" updated successfully!",
@@ -287,7 +286,7 @@ pub fn handle_update(
                   )
                 }
                 Error(couchdb.NotFound(_)) -> {
-                  render_error_page(
+                  util.render_error_page(
                     "Volunteer \"" <> volunteer.name <> "\" not found.",
                     [
                       #(
@@ -299,7 +298,7 @@ pub fn handle_update(
                   )
                 }
                 Error(err) -> {
-                  render_error_page(
+                  util.render_error_page(
                     "Failed to update volunteer: "
                       <> couchdb.error_to_string(err),
                     [
@@ -363,14 +362,14 @@ pub fn handle_delete(
           )
         }
         Error(volunteers.FileNotFound(_)) -> {
-          render_error_page(
+          util.render_error_page(
             "Volunteer \"" <> decoded_name <> "\" not found.",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
             404,
           )
         }
         Error(_) -> {
-          render_error_page(
+          util.render_error_page(
             "Failed to load volunteer \"" <> decoded_name <> "\"",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
             500,
@@ -402,7 +401,7 @@ pub fn handle_delete_post(
       let csrf_token = util.get_form_field(body, "csrf_token")
       case auth.validate_csrf_token(req, csrf_token) {
         False -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
             403,
@@ -411,21 +410,21 @@ pub fn handle_delete_post(
         True -> {
           case db.delete_volunteer(couch_config, decoded_name) {
             Ok(_) -> {
-              render_success_page(
+              util.render_success_page(
                 "Volunteer \"" <> decoded_name <> "\" deleted successfully.",
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
                 200,
               )
             }
             Error(couchdb.NotFound(_)) -> {
-              render_error_page(
+              util.render_error_page(
                 "Volunteer \"" <> decoded_name <> "\" not found.",
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
                 404,
               )
             }
             Error(err) -> {
-              render_error_page(
+              util.render_error_page(
                 "Failed to delete volunteer: " <> couchdb.error_to_string(err),
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
                 500,
@@ -556,56 +555,4 @@ fn format_validation_errors(errors: List(ValidationError)) -> String {
     }
   })
   |> string.join("; ")
-}
-
-fn render_error_page(
-  message: String,
-  links: List(#(String, String)),
-  status: Int,
-) -> Response {
-  let link_elements =
-    list.map(links, fn(link) {
-      let #(url, text) = link
-      html.h2([], [
-        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
-          html.text("> " <> text),
-        ]),
-      ])
-    })
-
-  let page =
-    base.Page(head: [html.title([], "Error | Homeserve")], css: [], body: [
-      html.div([attribute.class("dead-center")], [
-        html.h1([], [html.text("ERROR")]),
-        html.p([], [html.text(message)]),
-        ..link_elements
-      ]),
-    ])
-  wisp.response(status) |> wisp.html_body(base.render_page(page))
-}
-
-fn render_success_page(
-  message: String,
-  links: List(#(String, String)),
-  status: Int,
-) -> Response {
-  let link_elements =
-    list.map(links, fn(link) {
-      let #(url, text) = link
-      html.h2([], [
-        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
-          html.text("> " <> text),
-        ]),
-      ])
-    })
-
-  let page =
-    base.Page(head: [html.title([], "Success | Homeserve")], css: [], body: [
-      html.div([attribute.class("dead-center")], [
-        html.h1([], [html.text("SUCCESS")]),
-        html.p([], [html.text(message)]),
-        ..link_elements
-      ]),
-    ])
-  wisp.response(status) |> wisp.html_body(base.render_page(page))
 }

@@ -7,6 +7,8 @@ import gleam/option.{None, Some}
 import wisp
 
 import homeserve/base
+import homeserve/config.{type Config}
+import homeserve/couchdb
 import homeserve/pages/errors
 import homeserve/pages/panel/loader
 import homeserve/pages/panel/renderer
@@ -24,18 +26,6 @@ pub type Panel =
 pub type ParseError =
   types.ParseError
 
-// ---- Public loader API ----
-
-/// Loads and parses a panel from CouchDB by index.
-pub fn load_panel(panel_index: Int) -> Result(Panel, ParseError) {
-  loader.load_panel(panel_index)
-}
-
-/// Decodes only the metadata for a panel from CouchDB by index.
-pub fn decode_meta(panel_index: Int) -> Result(Meta, ParseError) {
-  loader.decode_meta(panel_index)
-}
-
 // ---- Public rendering API ----
 
 /// Renders a panel page.
@@ -43,12 +33,14 @@ pub fn render_panel(
   panel_index: Int,
   quirked: Bool,
   animated: Bool,
+  cfg: Config,
 ) -> base.Page {
   let panel_str = int.to_string(panel_index)
+  let couch_config = couchdb.config_from_app_config(cfg)
 
   wisp.log_debug("Rendering panel " <> panel_str)
 
-  case load_panel(panel_index) {
+  case loader.load_panel(couch_config, panel_index) {
     Error(err) -> {
       let err_str = types.parse_error_to_string(err)
       case err {
@@ -67,7 +59,9 @@ pub fn render_panel(
     Ok(panel) -> {
       wisp.log_debug("Successfully loaded panel " <> panel_str)
 
-      let next_page_text = case decode_meta(panel_index + 1) {
+      let next_page_text = case
+        loader.decode_meta(couch_config, panel_index + 1)
+      {
         Ok(next) -> Some(next.title)
         Error(_) -> None
       }

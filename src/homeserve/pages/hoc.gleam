@@ -15,7 +15,8 @@ import homeserve/base
 import homeserve/couchdb
 import homeserve/db
 import homeserve/pages/errors
-import homeserve/pages/panel
+import homeserve/pages/panel/loader
+import homeserve/pages/panel/types
 
 import lustre/attribute
 import lustre/element
@@ -103,7 +104,7 @@ fn unique_case_insensitive(names: List(String)) -> List(String) {
   |> list.reverse
 }
 
-fn unique_contributors(panels: List(panel.Meta)) -> Hoc {
+fn unique_contributors(panels: List(types.Meta)) -> Hoc {
   let get_unique = fn(extractor) {
     panels
     |> list.flat_map(extractor)
@@ -121,7 +122,7 @@ fn unique_contributors(panels: List(panel.Meta)) -> Hoc {
   ])
 }
 
-fn get_all_contributions(panels: List(panel.Meta)) -> List(Contribution) {
+fn get_all_contributions(panels: List(types.Meta)) -> List(Contribution) {
   panels
   |> list.flat_map(fn(meta) {
     let c = meta.credits
@@ -144,7 +145,7 @@ fn normalize_name(name: String) -> String {
 
 fn get_contributor_info(
   target_name: String,
-  panels: List(panel.Meta),
+  panels: List(types.Meta),
 ) -> Option(Contributor) {
   let normalized_target = normalize_name(target_name)
 
@@ -226,7 +227,7 @@ fn render_contributor_list(contributors: List(String)) {
 
 // ---- Page builders ----
 
-pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
+pub fn build_hoc(panels: List(types.Meta)) -> base.Page {
   let hoc = unique_contributors(panels)
 
   let total_contributors =
@@ -288,7 +289,7 @@ pub fn build_hoc(panels: List(panel.Meta)) -> base.Page {
 
 pub fn build_contributor(
   contributor: String,
-  panels: List(panel.Meta),
+  panels: List(types.Meta),
   couch_config: couchdb.CouchConfig,
 ) -> base.Page {
   let volunteer_info = case db.load_volunteer(couch_config, contributor) {
@@ -392,7 +393,7 @@ pub fn build_contributor(
               html.ul(
                 [attribute.class("list-clean list-divided scrollable")],
                 list.filter_map(stats.contributed_to, fn(panel_index) {
-                  case panel.decode_meta(panel_index) {
+                  case loader.decode_meta(couch_config, panel_index) {
                     Error(_) -> Error(Nil)
                     Ok(panel_meta) ->
                       Ok(

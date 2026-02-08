@@ -5,7 +5,6 @@
 
 import gleam/http
 import gleam/int
-import gleam/list
 
 import lustre/attribute
 import lustre/element/html
@@ -63,7 +62,7 @@ pub fn handle_create(
       let csrf_token = util.get_form_field(body, "csrf_token")
       case auth.validate_csrf_token(req, csrf_token) {
         False -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
             [#("/admin?token=" <> token, "Back to Admin")],
             403,
@@ -72,7 +71,7 @@ pub fn handle_create(
         True -> {
           case int.base_parse(util.get_form_field(body, "index"), 10) {
             Error(_) -> {
-              render_error_page(
+              util.render_error_page(
                 "Invalid panel index. Must be a number.",
                 [
                   #("/admin?token=" <> token, "Back to Admin"),
@@ -90,7 +89,7 @@ pub fn handle_create(
               {
                 Error(errors) -> {
                   let error_msg = util.format_validation_errors(errors)
-                  render_error_page(
+                  util.render_error_page(
                     "Validation failed: " <> error_msg,
                     [#("/admin?token=" <> token, "Back to Admin")],
                     400,
@@ -99,7 +98,7 @@ pub fn handle_create(
                 Ok(panel) -> {
                   case db.save_panel(couch_config, panel) {
                     Ok(_) -> {
-                      render_success_page(
+                      util.render_success_page(
                         "Panel #"
                           <> int.to_string(index)
                           <> " created successfully!",
@@ -111,7 +110,7 @@ pub fn handle_create(
                       )
                     }
                     Error(err) -> {
-                      render_error_page(
+                      util.render_error_page(
                         "Failed to save panel: " <> couchdb.error_to_string(err),
                         [
                           #("/admin?token=" <> token, "Back to Admin"),
@@ -153,7 +152,7 @@ pub fn serve_list(
           wisp.ok() |> wisp.html_body(base.render_page(page))
         }
         Error(err) -> {
-          render_error_page(
+          util.render_error_page(
             "Failed to load panels: " <> couchdb.error_to_string(err),
             [
               #("/admin?token=" <> token, "Back to Admin"),
@@ -181,7 +180,7 @@ pub fn serve_edit(
       let token = auth.get_token_string(req)
       case int.base_parse(panel_index, 10) {
         Error(_) -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid panel index.",
             [
               #("/admin/list?token=" <> token, "Back to List"),
@@ -210,7 +209,7 @@ pub fn serve_edit(
               )
             }
             Error(types.FileNotFound(_)) -> {
-              render_error_page(
+              util.render_error_page(
                 "Panel #" <> panel_index <> " not found.",
                 [
                   #("/admin/list?token=" <> token, "Back to List"),
@@ -219,7 +218,7 @@ pub fn serve_edit(
               )
             }
             Error(_) -> {
-              render_error_page(
+              util.render_error_page(
                 "Failed to load panel #" <> panel_index,
                 [
                   #("/admin/list?token=" <> token, "Back to List"),
@@ -252,7 +251,7 @@ pub fn handle_update(
       let csrf_token = util.get_form_field(body, "csrf_token")
       case auth.validate_csrf_token(req, csrf_token) {
         False -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
             [#("/admin/list?token=" <> token, "Back to List")],
             403,
@@ -261,7 +260,7 @@ pub fn handle_update(
         True -> {
           case int.base_parse(util.get_form_field(body, "index"), 10) {
             Error(_) -> {
-              render_error_page(
+              util.render_error_page(
                 "Invalid panel index.",
                 [
                   #("/admin/list?token=" <> token, "Back to List"),
@@ -277,7 +276,7 @@ pub fn handle_update(
               case util.build_panel_from_form(body, index, original_date) {
                 Error(errors) -> {
                   let error_msg = util.format_validation_errors(errors)
-                  render_error_page(
+                  util.render_error_page(
                     "Validation failed: " <> error_msg,
                     [#("/admin/list?token=" <> token, "Back to List")],
                     400,
@@ -286,7 +285,7 @@ pub fn handle_update(
                 Ok(panel) -> {
                   case db.update_panel(couch_config, panel) {
                     Ok(_) -> {
-                      render_success_page(
+                      util.render_success_page(
                         "Panel #"
                           <> int.to_string(index)
                           <> " updated successfully!",
@@ -298,7 +297,7 @@ pub fn handle_update(
                       )
                     }
                     Error(couchdb.NotFound(_)) -> {
-                      render_error_page(
+                      util.render_error_page(
                         "Panel #" <> int.to_string(index) <> " not found.",
                         [
                           #("/admin/list?token=" <> token, "Back to List"),
@@ -307,7 +306,7 @@ pub fn handle_update(
                       )
                     }
                     Error(err) -> {
-                      render_error_page(
+                      util.render_error_page(
                         "Failed to update panel: "
                           <> couchdb.error_to_string(err),
                         [
@@ -342,7 +341,7 @@ pub fn handle_delete(
       let token = auth.get_token_string(req)
       case int.base_parse(panel_index, 10) {
         Error(_) -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid panel index.",
             [
               #("/admin/list?token=" <> token, "Back to List"),
@@ -378,7 +377,7 @@ pub fn handle_delete(
               )
             }
             Error(types.FileNotFound(_)) -> {
-              render_error_page(
+              util.render_error_page(
                 "Panel #" <> panel_index <> " not found.",
                 [
                   #("/admin/list?token=" <> token, "Back to List"),
@@ -387,7 +386,7 @@ pub fn handle_delete(
               )
             }
             Error(_) -> {
-              render_error_page(
+              util.render_error_page(
                 "Failed to load panel #" <> panel_index,
                 [
                   #("/admin/list?token=" <> token, "Back to List"),
@@ -421,7 +420,7 @@ pub fn handle_delete_post(
       let csrf_token = util.get_form_field(body, "csrf_token")
       case auth.validate_csrf_token(req, csrf_token) {
         False -> {
-          render_error_page(
+          util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
             [#("/admin/list?token=" <> token, "Back to List")],
             403,
@@ -430,7 +429,7 @@ pub fn handle_delete_post(
         True -> {
           case int.base_parse(panel_index, 10) {
             Error(_) -> {
-              render_error_page(
+              util.render_error_page(
                 "Invalid panel index.",
                 [
                   #("/admin/list?token=" <> token, "Back to List"),
@@ -441,7 +440,7 @@ pub fn handle_delete_post(
             Ok(index) -> {
               case db.delete_panel(couch_config, index) {
                 Ok(_) -> {
-                  render_success_page(
+                  util.render_success_page(
                     "Panel #" <> panel_index <> " deleted successfully.",
                     [
                       #("/admin/list?token=" <> token, "Back to List"),
@@ -450,7 +449,7 @@ pub fn handle_delete_post(
                   )
                 }
                 Error(couchdb.NotFound(_)) -> {
-                  render_error_page(
+                  util.render_error_page(
                     "Panel #" <> panel_index <> " not found.",
                     [
                       #("/admin/list?token=" <> token, "Back to List"),
@@ -459,7 +458,7 @@ pub fn handle_delete_post(
                   )
                 }
                 Error(err) -> {
-                  render_error_page(
+                  util.render_error_page(
                     "Failed to delete panel: " <> couchdb.error_to_string(err),
                     [
                       #("/admin/list?token=" <> token, "Back to List"),
@@ -477,54 +476,6 @@ pub fn handle_delete_post(
 }
 
 // ---- Helper Functions ----
-
-fn render_error_page(
-  message: String,
-  links: List(#(String, String)),
-  status: Int,
-) -> Response {
-  let page =
-    base.Page(head: [html.title([], "Error | Homeserve")], css: [], body: [
-      render_message_page("ERROR", message, links),
-    ])
-  wisp.response(status) |> wisp.html_body(base.render_page(page))
-}
-
-fn render_success_page(
-  message: String,
-  links: List(#(String, String)),
-  status: Int,
-) -> Response {
-  let page =
-    base.Page(head: [html.title([], "Success | Homeserve")], css: [], body: [
-      render_message_page("SUCCESS", message, links),
-    ])
-  wisp.response(status) |> wisp.html_body(base.render_page(page))
-}
-
-// ---- Page Templates (merged from pages.gleam) ----
-
-fn render_message_page(
-  title: String,
-  message: String,
-  links: List(#(String, String)),
-) {
-  let link_elements =
-    list.map(links, fn(link) {
-      let #(url, text) = link
-      html.h2([], [
-        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
-          html.text("> " <> text),
-        ]),
-      ])
-    })
-
-  html.div([attribute.class("dead-center")], [
-    html.h1([], [html.text(title)]),
-    html.p([], [html.text(message)]),
-    ..link_elements
-  ])
-}
 
 fn render_delete_confirmation(
   token: String,

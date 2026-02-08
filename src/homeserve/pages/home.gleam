@@ -107,8 +107,7 @@ fn render_about_section() {
 fn render_recent_panels(panels: List(panel.Meta)) {
   let recent_panels =
     panels
-    |> list.filter(fn(page) { !page.draft })
-    |> list.filter(fn(page) { page.index != 0 })
+    |> list.filter(fn(page) { !page.draft && page.index != 0 })
     |> list.sort(fn(a, b) { int.compare(b.date, a.date) })
     |> list.take(15)
 

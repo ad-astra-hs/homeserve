@@ -14,6 +14,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import gleam/uri
 
 import lustre/attribute
 import lustre/element
@@ -719,5 +720,3 @@ fn render_volunteer_admin_nav(token: String) {
     ),
   ])
 }
-
-import gleam/uri

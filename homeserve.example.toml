@@ -18,25 +18,6 @@ port = 8000
 host = "0.0.0.0"
 
 # =============================================================================
-# CACHE CONFIGURATION
-# =============================================================================
-
-[cache]
-# How long to cache panel metadata in memory before refreshing from CouchDB.
-# This reduces database load and improves response times.
-# Unit: minutes
-ttl_minutes = 60
-
-# How frequently to poll CouchDB for changes (change feed polling interval).
-# Lower values detect changes faster but increase database load.
-# Unit: seconds
-watch_interval_seconds = 5
-
-# Maximum number of panels to keep in the cache.
-# When exceeded, oldest panels are evicted first.
-max_cache_size = 1000
-
-# =============================================================================
 # PATHS CONFIGURATION
 # =============================================================================
 

@@ -2,8 +2,10 @@
 /// Loads settings from homeserve.toml file.
 import gleam/dict
 import gleam/int
+import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/result
+import gleam/string
 import simplifile
 import tom
 import wisp
@@ -14,7 +16,6 @@ import wisp
 pub type Config {
   Config(
     server: ServerConfig,
-    cache: CacheConfig,
     paths: PathsConfig,
     couchdb: CouchdbConfig,
     admin: AdminConfig,
@@ -54,15 +55,6 @@ pub type ServerConfig {
   ServerConfig(port: Int, host: String)
 }
 
-/// Cache-related configuration.
-pub type CacheConfig {
-  CacheConfig(
-    ttl_minutes: Int,
-    watch_interval_seconds: Int,
-    max_cache_size: Int,
-  )
-}
-
 /// Path-related configuration.
 pub type PathsConfig {
   PathsConfig(assets_directory: String, extra_directory: String)
@@ -83,12 +75,6 @@ const default_config_path = "./homeserve.toml"
 const default_port = 8000
 
 const default_host = "0.0.0.0"
-
-const default_cache_ttl_minutes = 60
-
-const default_watch_interval_seconds = 5
-
-const default_max_cache_size = 1000
 
 const default_assets_directory = "./priv/static/assets"
 
@@ -168,11 +154,6 @@ pub fn load_from(path: String) -> Config {
 pub fn default_config() -> Config {
   Config(
     server: ServerConfig(port: default_port, host: default_host),
-    cache: CacheConfig(
-      ttl_minutes: default_cache_ttl_minutes,
-      watch_interval_seconds: default_watch_interval_seconds,
-      max_cache_size: default_max_cache_size,
-    ),
     paths: PathsConfig(
       assets_directory: default_assets_directory,
       extra_directory: default_extra_directory,
@@ -212,6 +193,110 @@ fn load_from_file(path: String) -> Result(Config, ConfigError) {
   parse_config(toml)
 }
 
+/// Validation error for configuration values.
+pub type ValidationError {
+  InvalidPort(field: String, value: Int, min: Int, max: Int)
+  InvalidNonEmptyString(field: String)
+  InvalidEmail(field: String, value: String)
+}
+
+/// Converts ValidationError to human-readable string.
+pub fn validation_error_to_string(err: ValidationError) -> String {
+  case err {
+    InvalidPort(field, value, min, max) ->
+      field
+      <> " must be between "
+      <> int.to_string(min)
+      <> " and "
+      <> int.to_string(max)
+      <> ", got "
+      <> int.to_string(value)
+    InvalidNonEmptyString(field) -> field <> " cannot be empty"
+    InvalidEmail(field, value) ->
+      "'" <> value <> "' is not a valid email address for " <> field
+  }
+}
+
+/// Validates a configuration and returns list of validation errors.
+/// Returns empty list if configuration is valid.
+pub fn validate_config(config: Config) -> List(ValidationError) {
+  let errors = []
+
+  // Validate server config
+  let errors = case is_valid_port(config.server.port) {
+    True -> errors
+    False -> [
+      InvalidPort("server.port", config.server.port, 1, 65_535),
+      ..errors
+    ]
+  }
+
+  let errors = case string.is_empty(config.server.host) {
+    True -> [InvalidNonEmptyString("server.host"), ..errors]
+    False -> errors
+  }
+
+  // Validate paths config
+  let errors = case string.is_empty(config.paths.assets_directory) {
+    True -> [InvalidNonEmptyString("paths.assets_directory"), ..errors]
+    False -> errors
+  }
+
+  let errors = case string.is_empty(config.paths.extra_directory) {
+    True -> [InvalidNonEmptyString("paths.extra_directory"), ..errors]
+    False -> errors
+  }
+
+  // Validate CouchDB config
+  let errors = case is_valid_port(config.couchdb.port) {
+    True -> errors
+    False -> [
+      InvalidPort("couchdb.port", config.couchdb.port, 1, 65_535),
+      ..errors
+    ]
+  }
+
+  let errors = case string.is_empty(config.couchdb.database) {
+    True -> [InvalidNonEmptyString("couchdb.database"), ..errors]
+    False -> errors
+  }
+
+  let errors = case string.is_empty(config.couchdb.host) {
+    True -> [InvalidNonEmptyString("couchdb.host"), ..errors]
+    False -> errors
+  }
+
+  // Validate admin config
+  let errors = case string.is_empty(config.admin.token) {
+    True -> [InvalidNonEmptyString("admin.token"), ..errors]
+    False -> errors
+  }
+
+  // Validate contact config (basic email validation)
+  let errors = case is_valid_email(config.contact.email) {
+    True -> errors
+    False -> [InvalidEmail("contact.email", config.contact.email), ..errors]
+  }
+
+  list.reverse(errors)
+}
+
+fn is_valid_port(port: Int) -> Bool {
+  port >= 1 && port <= 65_535
+}
+
+fn is_valid_email(email: String) -> Bool {
+  // Basic email validation - must contain @ and have non-empty local and domain parts
+  case string.split(email, "@") {
+    [local, domain] -> {
+      !string.is_empty(local)
+      && !string.is_empty(domain)
+      && string.contains(domain, ".")
+    }
+    _ -> False
+  }
+}
+
 fn parse_config(
   toml: dict.Dict(String, tom.Toml),
 ) -> Result(Config, ConfigError) {
@@ -219,112 +304,75 @@ fn parse_config(
 
   // Parse server config
   let server_port =
-    get_int_or_default(toml, ["server", "port"], defaults.server.port)
+    tom.get_int(toml, ["server", "port"])
+    |> result.unwrap(defaults.server.port)
   let server_host =
-    get_string_or_default(toml, ["server", "host"], defaults.server.host)
-
-  // Parse cache config
-  let cache_ttl =
-    get_int_or_default(
-      toml,
-      ["cache", "ttl_minutes"],
-      defaults.cache.ttl_minutes,
-    )
-  let watch_interval =
-    get_int_or_default(
-      toml,
-      ["cache", "watch_interval_seconds"],
-      defaults.cache.watch_interval_seconds,
-    )
-  let max_cache_size =
-    get_int_or_default(
-      toml,
-      ["cache", "max_cache_size"],
-      defaults.cache.max_cache_size,
-    )
+    tom.get_string(toml, ["server", "host"])
+    |> result.unwrap(defaults.server.host)
 
   // Parse paths config
   let assets_dir =
-    get_string_or_default(
-      toml,
-      ["paths", "assets_directory"],
-      defaults.paths.assets_directory,
-    )
+    tom.get_string(toml, ["paths", "assets_directory"])
+    |> result.unwrap(defaults.paths.assets_directory)
   let extra_dir =
-    get_string_or_default(
-      toml,
-      ["paths", "extra_directory"],
-      defaults.paths.extra_directory,
-    )
+    tom.get_string(toml, ["paths", "extra_directory"])
+    |> result.unwrap(defaults.paths.extra_directory)
 
   // Parse couchdb config
   let couchdb_host =
-    get_string_or_default(toml, ["couchdb", "host"], defaults.couchdb.host)
+    tom.get_string(toml, ["couchdb", "host"])
+    |> result.unwrap(defaults.couchdb.host)
   let couchdb_port =
-    get_int_or_default(toml, ["couchdb", "port"], defaults.couchdb.port)
+    tom.get_int(toml, ["couchdb", "port"])
+    |> result.unwrap(defaults.couchdb.port)
   let couchdb_database =
-    get_string_or_default(
-      toml,
-      ["couchdb", "database"],
-      defaults.couchdb.database,
-    )
+    tom.get_string(toml, ["couchdb", "database"])
+    |> result.unwrap(defaults.couchdb.database)
   let couchdb_username =
-    get_string_or_default(
-      toml,
-      ["couchdb", "username"],
-      default_couchdb_username,
-    )
+    tom.get_string(toml, ["couchdb", "username"])
+    |> result.unwrap(default_couchdb_username)
   let couchdb_password =
-    get_string_or_default(
-      toml,
-      ["couchdb", "password"],
-      default_couchdb_password,
-    )
+    tom.get_string(toml, ["couchdb", "password"])
+    |> result.unwrap(default_couchdb_password)
 
   // Parse admin config
   let admin_token =
-    get_string_or_default(toml, ["admin", "token"], default_admin_token)
+    tom.get_string(toml, ["admin", "token"])
+    |> result.unwrap(default_admin_token)
 
   // Parse contact config
   let contact_email =
-    get_string_or_default(toml, ["contact", "email"], default_contact_email)
+    tom.get_string(toml, ["contact", "email"])
+    |> result.unwrap(default_contact_email)
 
-  Ok(Config(
-    server: ServerConfig(port: server_port, host: server_host),
-    cache: CacheConfig(
-      ttl_minutes: cache_ttl,
-      watch_interval_seconds: watch_interval,
-      max_cache_size: max_cache_size,
-    ),
-    paths: PathsConfig(assets_directory: assets_dir, extra_directory: extra_dir),
-    couchdb: CouchdbConfig(
-      host: couchdb_host,
-      port: couchdb_port,
-      database: couchdb_database,
-      username: Some(couchdb_username),
-      password: Some(couchdb_password),
-    ),
-    admin: AdminConfig(token: admin_token),
-    contact: ContactConfig(email: contact_email),
-  ))
-}
+  let config =
+    Config(
+      server: ServerConfig(port: server_port, host: server_host),
+      paths: PathsConfig(
+        assets_directory: assets_dir,
+        extra_directory: extra_dir,
+      ),
+      couchdb: CouchdbConfig(
+        host: couchdb_host,
+        port: couchdb_port,
+        database: couchdb_database,
+        username: Some(couchdb_username),
+        password: Some(couchdb_password),
+      ),
+      admin: AdminConfig(token: admin_token),
+      contact: ContactConfig(email: contact_email),
+    )
 
-fn get_int_or_default(
-  toml: dict.Dict(String, tom.Toml),
-  key: List(String),
-  default: Int,
-) -> Int {
-  tom.get_int(toml, key)
-  |> result.unwrap(default)
-}
-
-fn get_string_or_default(
-  toml: dict.Dict(String, tom.Toml),
-  key: List(String),
-  default: String,
-) -> String {
-  tom.get_string(toml, key)
-  |> result.unwrap(default)
+  // Validate the parsed configuration
+  case validate_config(config) {
+    [] -> Ok(config)
+    errors -> {
+      let error_msgs =
+        list.map(errors, validation_error_to_string)
+        |> string.join("; ")
+      Error(ParseError("Configuration validation failed: " <> error_msgs))
+    }
+  }
 }
 
 fn key_to_string(key: List(String)) -> String {
@@ -351,12 +399,6 @@ fn log_config(config: Config) -> Nil {
     <> config.server.host
     <> ":"
     <> int.to_string(config.server.port)
-    <> ", cache_ttl="
-    <> int.to_string(config.cache.ttl_minutes)
-    <> "min"
-    <> ", watch_interval="
-    <> int.to_string(config.cache.watch_interval_seconds)
-    <> "s"
     <> ", couchdb="
     <> config.couchdb.host
     <> ":"
