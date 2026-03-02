@@ -3,19 +3,18 @@
 /// Form parsing, input validation, page rendering, and panel building utilities.
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/result
 import gleam/string
 import homeserve/base
-import homeserve/config.{type Config}
 import homeserve/utils
 
-import homeserve/pages/admin/auth
 import homeserve/pages/panel/types.{
   type Panel, Credits, Image, Media, Meta, Panel as PanelConstructor, Video,
 }
 import homeserve/security
 import lustre/attribute
 import lustre/element/html
-import wisp.{type FormData, type Request, type Response}
+import wisp.{type FormData, type Response}
 
 /// Maximum lengths for form fields
 const max_title_length = 200
@@ -193,11 +192,12 @@ pub fn build_panel_from_form(
   case errors {
     [] -> {
       // All validations passed, build the panel
-      let assert Ok(title) = title_result
-      let assert Ok(media_url) = media_url_result
-      let assert Ok(content_raw) = content_result
-      let assert Ok(media_alt) = media_alt_result
-      let assert Ok(media_track) = media_track_result
+      // Use unwrap with defaults - safe because we verified no errors above
+      let title = result.unwrap(title_result, "")
+      let media_url = result.unwrap(media_url_result, "")
+      let content_raw = result.unwrap(content_result, "")
+      let media_alt = result.unwrap(media_alt_result, "")
+      let media_track = result.unwrap(media_track_result, "")
 
       // Content is stored as-is (panel authors are trusted)
       let content = content_raw
@@ -331,16 +331,4 @@ pub fn render_success_page(
       ]),
     ])
   wisp.response(status) |> wisp.html_body(base.render_page(page))
-}
-
-/// Requires authentication or renders login page.
-pub fn require_auth(
-  req: Request,
-  cfg: Config,
-  handler: fn(String) -> Response,
-) -> Response {
-  case auth.is_authenticated(req, cfg) {
-    False -> auth.render_login_page()
-    True -> handler(auth.get_token_string(req))
-  }
 }

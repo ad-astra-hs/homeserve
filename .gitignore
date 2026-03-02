@@ -3,9 +3,9 @@ homeserve.toml
 *.beam
 *.ez
 erl_crash.dump
+Mnesia.*
 
 /priv/static/assets/*
-!/priv/static/assets/.gitkeep
 !/priv/static/assets/logo.png
 !/priv/static/assets/background.png
 !/priv/static/assets/top_banner.png

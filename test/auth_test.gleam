@@ -1,3 +1,4 @@
+import gleam/string
 import gleeunit/should
 
 import homeserve/pages/admin/auth
@@ -16,20 +17,20 @@ pub fn verify_plaintext_token_wrong_test() {
   |> should.be_false
 }
 
-pub fn verify_bcrypt_token_test() {
+pub fn verify_hashed_token_test() {
   // Hash a token and verify it works
   let token = "test-token-123"
   let hash = auth.hash_token(token)
 
-  // Verify the hash format (bcrypt hashes start with $2)
-  should.be_true(string.starts_with(hash, "$2"))
+  // Verify the hash format (SHA-256 hashes start with sha256:)
+  should.be_true(string.starts_with(hash, "sha256:"))
 
   // Verify the token against the hash
   auth.verify_token(token, hash)
   |> should.be_true
 }
 
-pub fn verify_bcrypt_token_wrong_test() {
+pub fn verify_hashed_token_wrong_test() {
   // Wrong token against hash should fail
   let token = "correct-token"
   let hash = auth.hash_token(token)
@@ -40,7 +41,7 @@ pub fn verify_bcrypt_token_wrong_test() {
 
 pub fn hash_token_is_consistent_test() {
   // Hashing the same token twice should produce different hashes
-  // (due to bcrypt salt), but both should verify correctly
+  // (due to random salt), but both should verify correctly
   let token = "my-token"
   let hash1 = auth.hash_token(token)
   let hash2 = auth.hash_token(token)
@@ -53,5 +54,12 @@ pub fn hash_token_is_consistent_test() {
   auth.verify_token(token, hash2) |> should.be_true
 }
 
-// Helper import
-import gleam/string
+// ---- Legacy Bcrypt Format Tests ----
+
+pub fn verify_legacy_bcrypt_format_returns_false_test() {
+  // Legacy bcrypt hashes should return False (users need to regenerate)
+  // This ensures we don't crash on old bcrypt format
+  let legacy_bcrypt_hash = "$2b$10$somehashvaluehere"
+  auth.verify_token("any-token", legacy_bcrypt_hash)
+  |> should.be_false
+}

@@ -24,18 +24,34 @@ pub fn sanitize_filename(input: String) -> Option(String) {
   // Step 1: Reject null bytes
   use <- bool.guard(string.contains(input, "\u{0000}"), None)
 
-  // Step 2: URL decode
+  // Step 2: Check for path traversal attempts BEFORE URL decoding
+  // These patterns indicate potential traversal attacks
+  let lowercase_input = string.lowercase(input)
+  use <- bool.guard(
+    string.contains(lowercase_input, "..")
+      || string.contains(lowercase_input, "%2e%2e")
+      || string.contains(lowercase_input, "%2e.")
+      || string.contains(lowercase_input, ".%2e"),
+    None,
+  )
+
+  // Step 3: URL decode
   let decoded =
     uri.percent_decode(input)
     |> result.unwrap(input)
 
-  // Step 3: Normalize path separators and normalize
+  // Step 4: Check again for traversal sequences after decoding
+  // (for patterns that weren't caught by the pre-decode check)
+  let decoded_lowercase = string.lowercase(decoded)
+  use <- bool.guard(string.contains(decoded_lowercase, ".."), None)
+
+  // Step 5: Normalize path separators and normalize
   let normalized =
     decoded
     |> string.replace("\\", "/")
     |> normalize_path
 
-  // Step 4: Extract just the filename (no directories)
+  // Step 6: Extract just the filename (no directories)
   let filename = case string.last(normalized) {
     Ok("/") ->
       // Trailing slash - invalid for a file
@@ -49,7 +65,7 @@ pub fn sanitize_filename(input: String) -> Option(String) {
     }
   }
 
-  // Step 5: Final validation
+  // Step 7: Final validation
   case filename {
     None -> None
     Some(name) -> {

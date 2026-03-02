@@ -1,4 +1,3 @@
-import gleam/bool
 import gleam/http
 import gleam/int
 import gleam/option.{type Option, None, Some}
@@ -8,9 +7,10 @@ import gleam/uri
 
 import homeserve/base
 import homeserve/config.{type Config}
-import homeserve/couchdb
 import homeserve/db
 import homeserve/health
+import homeserve/logging
+import homeserve/mnesia_db
 import homeserve/pages/admin
 import homeserve/pages/admin/volunteers as admin_volunteers
 import homeserve/pages/errors
@@ -18,6 +18,7 @@ import homeserve/pages/hoc
 import homeserve/pages/home
 import homeserve/pages/panel
 import homeserve/pages/privacy_policy
+import homeserve/pagination
 import homeserve/web/assets
 import homeserve/web/cookies
 import homeserve/web/middleware
@@ -41,10 +42,17 @@ import wisp.{type Request, type Response}
 pub fn handle_request(req: Request, cfg: Config) -> Response {
   use req <- middleware.middleware(req)
 
-  let couch_config = couchdb.config_from_app_config(cfg)
+  let path = wisp.path_segments(req)
+  let method = string.uppercase(string.inspect(req.method))
 
-  case wisp.path_segments(req) {
-    [] -> serve_home(req, couch_config)
+  // Log incoming request (skip static assets)
+  case path {
+    ["assets", ..] | ["favicon.ico"] -> Nil
+    _ -> logging.log_request(method, "/" <> string.join(path, "/"), None)
+  }
+
+  case path {
+    [] -> serve_home(req)
 
     // Game
     ["play"] ->
@@ -60,10 +68,11 @@ pub fn handle_request(req: Request, cfg: Config) -> Response {
     ["health"] -> health.serve_health(req, cfg)
 
     // Hall of Contributors
-    ["hoc"] -> serve_hoc(req, couch_config, None)
+    ["hoc"] -> serve_hoc(req, None, 1)
     ["hoc", volunteer] -> {
       let decoded = uri.percent_decode(volunteer) |> result.unwrap(volunteer)
-      serve_hoc(req, couch_config, Some(decoded))
+      let page = parse_page_query(req)
+      serve_hoc(req, Some(decoded), page)
     }
 
     // Media assets (music, panels, etc.)
@@ -80,14 +89,15 @@ pub fn handle_request(req: Request, cfg: Config) -> Response {
 
     // Admin panel
     ["admin"] -> admin.serve_admin(req, cfg)
-    ["admin", "create"] -> admin.handle_create(req, couch_config, cfg)
-    ["admin", "list"] -> admin.serve_list(req, couch_config, cfg)
-    ["admin", "edit", index] -> admin.serve_edit(req, couch_config, cfg, index)
-    ["admin", "update"] -> admin.handle_update(req, couch_config, cfg)
+    ["admin", "login"] -> admin.handle_login(req, cfg)
+    ["admin", "create"] -> admin.handle_create(req, cfg)
+    ["admin", "list"] -> admin.serve_list(req, cfg)
+    ["admin", "edit", index] -> admin.serve_edit(req, cfg, index)
+    ["admin", "update"] -> admin.handle_update(req, cfg)
     ["admin", "delete", index] -> {
       case req.method {
-        http.Get -> admin.handle_delete(req, couch_config, cfg, index)
-        http.Post -> admin.handle_delete_post(req, couch_config, cfg, index)
+        http.Get -> admin.handle_delete(req, cfg, index)
+        http.Post -> admin.handle_delete_post(req, cfg, index)
         _ -> serve_404(req)
       }
     }
@@ -95,18 +105,16 @@ pub fn handle_request(req: Request, cfg: Config) -> Response {
     // Volunteer admin routes
     ["admin", "volunteers"] -> admin_volunteers.serve_volunteer_admin(req, cfg)
     ["admin", "volunteers", "create"] ->
-      admin_volunteers.handle_create(req, couch_config, cfg)
-    ["admin", "volunteers", "list"] ->
-      admin_volunteers.serve_list(req, couch_config, cfg)
+      admin_volunteers.handle_create(req, cfg)
+    ["admin", "volunteers", "list"] -> admin_volunteers.serve_list(req, cfg)
     ["admin", "volunteers", "edit", name] ->
-      admin_volunteers.serve_edit(req, couch_config, cfg, name)
+      admin_volunteers.serve_edit(req, cfg, name)
     ["admin", "volunteers", "update"] ->
-      admin_volunteers.handle_update(req, couch_config, cfg)
+      admin_volunteers.handle_update(req, cfg)
     ["admin", "volunteers", "delete", name] -> {
       case req.method {
-        http.Get -> admin_volunteers.handle_delete(req, couch_config, cfg, name)
-        http.Post ->
-          admin_volunteers.handle_delete_post(req, couch_config, cfg, name)
+        http.Get -> admin_volunteers.handle_delete(req, cfg, name)
+        http.Post -> admin_volunteers.handle_delete_post(req, cfg, name)
         _ -> serve_404(req)
       }
     }
@@ -117,14 +125,16 @@ pub fn handle_request(req: Request, cfg: Config) -> Response {
 
 // ---- Page handlers ----
 
-fn serve_home(req: Request, couch_config: couchdb.CouchConfig) -> Response {
+fn serve_home(req: Request) -> Response {
   use <- wisp.require_method(req, http.Get)
 
-  let panels = case db.get_all_meta(couch_config) {
+  let panels = case db.get_all_meta() {
     Ok(panels) -> panels
     Error(err) -> {
-      wisp.log_warning(
-        "Failed to load panels for home page: " <> couchdb.error_to_string(err),
+      logging.warning_ctx(
+        "ROUTER",
+        "Failed to load panels for home page: "
+          <> mnesia_db.error_to_string(err),
       )
       []
     }
@@ -137,59 +147,51 @@ fn serve_home(req: Request, couch_config: couchdb.CouchConfig) -> Response {
 fn serve_panel_by_page(req: Request, page: String, cfg: Config) -> Response {
   case int.base_parse(page, 10) {
     Ok(page_num) -> serve_panel(req, page_num, cfg)
-    Error(_) -> {
-      wisp.log_warning("Invalid panel page requested: " <> page)
-      serve_404(req)
-    }
+    Error(_) -> serve_404(req)
   }
 }
 
-fn serve_panel(req: Request, which: Int, cfg: Config) -> Response {
+fn serve_panel(req: Request, which: Int, _cfg: Config) -> Response {
   use <- wisp.require_method(req, http.Get)
 
   let quirked = cookies.get_quirks(req)
   let animated = cookies.get_animations(req)
 
-  wisp.ok()
-  |> wisp.html_body(
-    base.render_page(panel.render_panel(which, quirked, animated, cfg)),
-  )
+  let #(status, page) = panel.render_panel(which, quirked, animated)
+  wisp.response(status)
+  |> wisp.html_body(base.render_page(page))
 }
 
-fn serve_hoc(
-  req: Request,
-  couch_config: couchdb.CouchConfig,
-  volunteer: Option(String),
-) -> Response {
+fn serve_hoc(req: Request, volunteer: Option(String), page: Int) -> Response {
   use <- wisp.require_method(req, http.Get)
 
-  let panels = case db.get_all_meta(couch_config) {
+  let panels = case db.get_all_meta() {
     Ok(panels) -> panels
     Error(err) -> {
-      wisp.log_warning(
-        "Failed to load panels for HOC page: " <> couchdb.error_to_string(err),
+      logging.warning_ctx(
+        "ROUTER",
+        "Failed to load panels for HOC: " <> mnesia_db.error_to_string(err),
       )
       []
     }
   }
 
-  let page = case volunteer {
+  case volunteer {
     Some(name) -> {
-      wisp.log_debug("Serving contributor page for: " <> name)
-      hoc.build_contributor(name, panels, couch_config)
+      let #(status, page_html) = hoc.build_contributor(name, panels, page)
+      wisp.response(status)
+      |> wisp.html_body(base.render_page(page_html))
     }
-    None -> hoc.build_hoc(panels)
+    None -> {
+      let hoc_page = hoc.build_hoc(panels)
+      wisp.ok()
+      |> wisp.html_body(base.render_page(hoc_page))
+    }
   }
-
-  wisp.ok()
-  |> wisp.html_body(base.render_page(page))
 }
 
 fn serve_404(req: Request) -> Response {
   use <- wisp.require_method(req, http.Get)
-
-  let path = wisp.path_segments(req) |> string.join("/")
-  wisp.log_info("404 Not Found: /" <> path)
 
   wisp.response(404)
   |> wisp.html_body(base.render_page(errors.build_error(404, "Page not found")))
@@ -210,32 +212,21 @@ fn toggle_quirks(req: Request) -> Response {
   use <- wisp.require_method(req, http.Get)
 
   let current = cookies.get_quirks(req)
-  let new_value = !current
-
-  wisp.log_debug(
-    "Toggling quirks: "
-    <> bool.to_string(current)
-    <> " -> "
-    <> bool.to_string(new_value),
-  )
-
   wisp.no_content()
-  |> cookies.set_bool_cookie(req, "quirked", new_value)
+  |> cookies.set_bool_cookie(req, "quirked", !current)
 }
 
 fn toggle_animations(req: Request) -> Response {
   use <- wisp.require_method(req, http.Get)
 
   let current = cookies.get_animations(req)
-  let new_value = !current
-
-  wisp.log_debug(
-    "Toggling animations: "
-    <> bool.to_string(current)
-    <> " -> "
-    <> bool.to_string(new_value),
-  )
-
   wisp.no_content()
-  |> cookies.set_bool_cookie(req, "animated", new_value)
+  |> cookies.set_bool_cookie(req, "animated", !current)
+}
+
+// ---- Query Parameter Helpers ----
+
+/// Parse page number from query parameters, defaulting to 1
+fn parse_page_query(req: Request) -> Int {
+  pagination.parse_page_param(wisp.get_query(req))
 }

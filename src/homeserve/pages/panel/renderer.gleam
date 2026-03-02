@@ -19,6 +19,7 @@ import sketch/css/media
 import sketch/css/transform
 
 import homeserve/base
+import homeserve/html_sanitize
 import homeserve/pages/panel/types.{
   type Credits, type Media, type Meta, Image, Video,
 }
@@ -107,7 +108,7 @@ pub fn render_media(media: Media, animated: Bool) {
 /// Extracts the filename from a URL or path.
 /// For "https://example.com/music/song.mp3" or "/assets/music/song.mp3"
 /// returns "song.mp3"
-fn extract_filename_from_url(url: String) -> String {
+pub fn extract_filename_from_url(url: String) -> String {
   url
   |> string.split("/")
   |> list.last
@@ -117,7 +118,7 @@ fn extract_filename_from_url(url: String) -> String {
 /// Extracts the display name from a track URL.
 /// Takes the filename and strips the extension.
 /// For "song.mp3" returns "song"
-fn extract_track_display_name(track_url: String) -> String {
+pub fn extract_track_display_name(track_url: String) -> String {
   let filename = extract_filename_from_url(track_url)
 
   // Split by "?" first to remove query params, then by "." for extension
@@ -348,7 +349,7 @@ pub fn build_css() -> List(css.Global) {
       css.padding(length.pt(3)),
       css.margin_bottom(length.rlh(1.0)),
     ]),
-    css.global(".page_inner summary::marker", [css.content("\"")]),
+    css.global(".page_inner summary::marker", [css.content("\"\"")]),
   ]
 }
 
@@ -399,6 +400,9 @@ pub fn build_panel(
   let head = build_head(metadata)
   let css = build_css()
 
+  // Sanitize HTML to prevent XSS
+  let sanitized_content = html_sanitize.sanitize(parsed_page)
+
   let body = [
     html.div([attribute.class("page_margins")], [
       html.div([attribute.class("page_outer box")], [
@@ -409,7 +413,7 @@ pub fn build_panel(
           "",
           "div",
           [attribute.class("page_inner box")],
-          parsed_page,
+          sanitized_content,
         ),
         render_next_link(metadata, next_page_text),
         render_credits(metadata.credits),

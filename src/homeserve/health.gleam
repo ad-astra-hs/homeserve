@@ -1,15 +1,14 @@
 /// Health Check Module
 ///
 /// Provides comprehensive health checks for Homeserve and its dependencies.
-/// The health endpoint verifies CouchDB connectivity and overall application readiness.
+/// The health endpoint verifies Mnesia connectivity and overall application readiness.
 import gleam/http
 import gleam/json
-import gleam/list
 import gleam/option.{type Option, None, Some}
 import homeserve/utils
 
 import homeserve/config.{type Config}
-import homeserve/couchdb
+import homeserve/mnesia_db
 import wisp.{type Request, type Response}
 
 /// Overall health status of the application
@@ -26,7 +25,7 @@ pub type HealthStatus {
 
 /// Component health information
 pub type Components {
-  Components(couchdb: ComponentHealth)
+  Components(database: ComponentHealth)
 }
 
 /// Individual component health status
@@ -43,11 +42,11 @@ pub type ComponentHealth {
 pub fn check_health(cfg: Config) -> HealthStatus {
   let timestamp = utils.current_time_seconds()
 
-  // Check CouchDB
-  let couchdb_health = check_couchdb(cfg)
+  // Check Mnesia database
+  let db_health = check_database(cfg)
 
-  // Determine overall status based on CouchDB health
-  let overall_status = case couchdb_health.status {
+  // Determine overall status based on database health
+  let overall_status = case db_health.status {
     "healthy" -> "healthy"
     _ -> "unhealthy"
   }
@@ -55,39 +54,46 @@ pub fn check_health(cfg: Config) -> HealthStatus {
   HealthStatus(
     status: overall_status,
     timestamp: timestamp,
-    components: Components(couchdb: couchdb_health),
+    components: Components(database: db_health),
   )
 }
 
-/// Check CouchDB connectivity
-fn check_couchdb(cfg: Config) -> ComponentHealth {
-  let couch_config =
-    couchdb.CouchConfig(
-      host: cfg.couchdb.host,
-      port: cfg.couchdb.port,
-      database: cfg.couchdb.database,
-      username: cfg.couchdb.username,
-      password: cfg.couchdb.password,
-    )
-
-  // Try to get database info as a connectivity check
-  case couchdb.get_all_docs(couch_config) {
-    Ok(docs) -> {
-      ComponentHealth(
-        status: "healthy",
-        message: "Connected",
-        details: Some(
-          json.object([
-            #("database", json.string(cfg.couchdb.database)),
-            #("document_count", json.int(list.length(docs))),
-          ]),
-        ),
-      )
+/// Check Mnesia database connectivity
+fn check_database(_cfg: Config) -> ComponentHealth {
+  // Try to get table info as a connectivity check
+  case mnesia_db.get_table_size(mnesia_db.panel_table) {
+    Ok(panel_count) -> {
+      case mnesia_db.get_table_size(mnesia_db.volunteer_table) {
+        Ok(volunteer_count) -> {
+          ComponentHealth(
+            status: "healthy",
+            message: "Connected",
+            details: Some(
+              json.object([
+                #("panel_count", json.int(panel_count)),
+                #("volunteer_count", json.int(volunteer_count)),
+              ]),
+            ),
+          )
+        }
+        Error(_) -> {
+          ComponentHealth(
+            status: "healthy",
+            message: "Connected (panels only)",
+            details: Some(
+              json.object([
+                #("panel_count", json.int(panel_count)),
+                #("volunteer_count", json.int(0)),
+              ]),
+            ),
+          )
+        }
+      }
     }
     Error(err) -> {
       ComponentHealth(
         status: "unhealthy",
-        message: couchdb.error_to_string(err),
+        message: mnesia_db.error_to_string(err),
         details: None,
       )
     }
@@ -105,7 +111,7 @@ fn encode_health(health: HealthStatus) -> json.Json {
 
 fn encode_components(components: Components) -> json.Json {
   json.object([
-    #("couchdb", encode_component(components.couchdb)),
+    #("database", encode_component(components.database)),
   ])
 }
 

@@ -5,7 +5,7 @@
 
 import gleam/option.{type Option}
 
-/// Metadata for a webcomic panel, stored in CouchDB.
+/// Metadata for a webcomic panel, stored in Mnesia.
 pub type Meta {
   Meta(
     /// Sequential index of the panel in the story
@@ -64,7 +64,7 @@ pub type Media {
 /// Complete panel data including metadata and markdown content.
 pub type Panel {
   Panel(
-    /// Panel metadata from CouchDB
+    /// Panel metadata from Mnesia
     meta: Meta,
     /// Markdown body content
     content: String,

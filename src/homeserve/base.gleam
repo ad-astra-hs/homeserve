@@ -10,6 +10,7 @@
 
 import gleam/list
 
+import homeserve/logging
 import lustre/attribute
 import lustre/element
 import lustre/element/html
@@ -19,7 +20,6 @@ import sketch/css
 import sketch/css/length
 import sketch/css/media
 import sketch/css/transform
-import wisp
 
 pub type Page {
   Page(
@@ -297,13 +297,39 @@ fn shared_css() -> List(css.Global) {
         css.grid_template_columns("1fr"),
       ]),
     ]),
+
+    // ---- Pagination ----
+    // Pagination controls container
+    css.global(".pagination-controls", [
+      css.display("flex"),
+      css.justify_content("center"),
+      css.align_items("center"),
+      css.gap(length.px(15)),
+      css.margin_top(length.pt(15)),
+      css.padding_top(length.pt(10)),
+      css.border_top("1px solid #bbb"),
+    ]),
+
+    // Pagination info text
+    css.global(".pagination-info", [
+      css.color("#666"),
+      css.font_size(length.pt(10)),
+      css.font_weight("bold"),
+    ]),
+
+    // Disabled button state
+    css.global(".btn-disabled", [
+      css.opacity(0.5),
+      css.cursor("not-allowed"),
+      css.color("#999"),
+    ]),
   ]
 }
 
 fn stylesheet(globals: List(css.Global)) -> String {
-  case sketch.stylesheet(sketch.Persistent) {
+  case sketch.stylesheet(sketch.Ephemeral) {
     Error(_) -> {
-      wisp.log_error("Failed to create sketch stylesheet")
+      logging.error_ctx("BASE", "Failed to create sketch stylesheet")
       ""
     }
     Ok(stylesheet) -> {
@@ -408,7 +434,7 @@ fn render_footer() -> vnode.Element(String) {
 }
 
 pub fn render_page(page: Page) {
-  wisp.log_debug("Rendering page")
+  logging.debug_ctx("BASE", "Rendering page")
 
   html.html([attribute.lang("en")], [
     html.head([], [

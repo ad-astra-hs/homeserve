@@ -1,6 +1,6 @@
 //// Hall of Contributors
 ////
-//// Lists all contributors to the project based on panel credits from CouchDB.
+//// Lists all contributors to the project based on panel credits from Mnesia.
 
 import gleam/int
 import gleam/list
@@ -12,17 +12,21 @@ import tempo.{Custom}
 import tempo/datetime
 
 import homeserve/base
-import homeserve/couchdb
 import homeserve/db
 import homeserve/pages/errors
-import homeserve/pages/panel/loader
 import homeserve/pages/panel/types
+import homeserve/pagination
 
 import lustre/attribute
 import lustre/element
 import lustre/element/html
 import sketch/css
 import sketch/css/length
+
+// ---- Constants ----
+
+/// Number of panels to display per page on contributor pages
+const panels_per_page = 10
 
 // ---- Types ----
 
@@ -287,18 +291,20 @@ pub fn build_hoc(panels: List(types.Meta)) -> base.Page {
   base.Page(head:, css:, body:)
 }
 
+/// Build contributor page with optional pagination.
+/// Returns the HTTP status code alongside the page.
 pub fn build_contributor(
   contributor: String,
   panels: List(types.Meta),
-  couch_config: couchdb.CouchConfig,
-) -> base.Page {
-  let volunteer_info = case db.load_volunteer(couch_config, contributor) {
+  current_page: Int,
+) -> #(Int, base.Page) {
+  let volunteer_info = case db.load_volunteer(contributor) {
     Ok(volunteer) -> Some(volunteer)
     Error(_) -> None
   }
 
   case get_contributor_info(contributor, panels) {
-    None -> errors.build_error(404, "Contributor not found")
+    None -> #(404, errors.build_error(404, "Contributor not found"))
     Some(stats) -> {
       let head = [html.title([], "Contributor: " <> contributor)]
 
@@ -315,6 +321,19 @@ pub fn build_contributor(
         css.global(".volunteer-info", [
           css.margin_top(length.pt(15)),
           css.padding_top(length.pt(10)),
+        ]),
+        css.global(".pagination-controls", [
+          css.display("flex"),
+          css.justify_content("center"),
+          css.align_items("center"),
+          css.gap(length.px(15)),
+          css.margin_top(length.pt(15)),
+          css.padding_top(length.pt(10)),
+          css.border_top("1px solid #444"),
+        ]),
+        css.global(".pagination-info", [
+          css.color("#888"),
+          css.font_size(length.pt(12)),
         ]),
       ]
 
@@ -341,6 +360,58 @@ pub fn build_contributor(
         ]
         None -> []
       }
+
+      // Calculate pagination
+      let total_panels = list.length(stats.contributed_to)
+      let total_pages =
+        pagination.calculate_total_pages(total_panels, panels_per_page)
+      let clamped_page = pagination.clamp_page(current_page, total_pages)
+
+      // Get paginated panels
+      let paginated_panels =
+        pagination.get_page(stats.contributed_to, clamped_page, panels_per_page)
+
+      let pagination_controls =
+        render_contributor_pagination(
+          contributor,
+          clamped_page,
+          total_pages,
+          total_panels,
+        )
+
+      let panels_list_html =
+        html.div([attribute.class("box-inner")], [
+          html.h2([attribute.class("heading-bordered")], [
+            html.text("PANELS (" <> int.to_string(total_panels) <> ")"),
+          ]),
+          html.ul(
+            [attribute.class("list-clean list-divided scrollable")],
+            list.filter_map(paginated_panels, fn(panel_index) {
+              case db.load_panel(panel_index) {
+                Error(_) -> Error(Nil)
+                Ok(panel) ->
+                  Ok(
+                    html.li([], [
+                      html.a(
+                        [
+                          attribute.href("/read/" <> int.to_string(panel_index)),
+                        ],
+                        [
+                          html.text(
+                            "#"
+                            <> int.to_string(panel_index)
+                            <> " "
+                            <> panel.meta.title,
+                          ),
+                        ],
+                      ),
+                    ]),
+                  )
+              }
+            }),
+          ),
+          pagination_controls,
+        ])
 
       let body = [
         html.div([attribute.class("page-container box")], [
@@ -386,44 +457,84 @@ pub fn build_contributor(
               ]),
               ..volunteer_section
             ]),
-            html.div([attribute.class("box-inner")], [
-              html.h2([attribute.class("heading-bordered")], [
-                html.text("PANELS"),
-              ]),
-              html.ul(
-                [attribute.class("list-clean list-divided scrollable")],
-                list.filter_map(stats.contributed_to, fn(panel_index) {
-                  case loader.decode_meta(couch_config, panel_index) {
-                    Error(_) -> Error(Nil)
-                    Ok(panel_meta) ->
-                      Ok(
-                        html.li([], [
-                          html.a(
-                            [
-                              attribute.href(
-                                "/read/" <> int.to_string(panel_index),
-                              ),
-                            ],
-                            [
-                              html.text(
-                                "#"
-                                <> int.to_string(panel_index)
-                                <> " "
-                                <> panel_meta.title,
-                              ),
-                            ],
-                          ),
-                        ]),
-                      )
-                  }
-                }),
-              ),
-            ]),
+            panels_list_html,
           ]),
         ]),
       ]
 
-      base.Page(head:, css:, body:)
+      #(200, base.Page(head:, css:, body:))
+    }
+  }
+}
+
+/// Render pagination controls for contributor page
+fn render_contributor_pagination(
+  contributor: String,
+  current_page: Int,
+  total_pages: Int,
+  total_items: Int,
+) {
+  case total_pages <= 1 {
+    True -> element.none()
+    False -> {
+      let prev_button = case current_page > 1 {
+        True ->
+          html.a(
+            [
+              attribute.href(
+                "/hoc/"
+                <> uri.percent_encode(contributor)
+                <> "?page="
+                <> int.to_string(current_page - 1),
+              ),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("← Previous")],
+          )
+        False ->
+          html.span([attribute.class("btn btn-disabled")], [
+            html.text("← Previous"),
+          ])
+      }
+
+      let next_button = case current_page < total_pages {
+        True ->
+          html.a(
+            [
+              attribute.href(
+                "/hoc/"
+                <> uri.percent_encode(contributor)
+                <> "?page="
+                <> int.to_string(current_page + 1),
+              ),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("Next →")],
+          )
+        False ->
+          html.span([attribute.class("btn btn-disabled")], [
+            html.text("Next →"),
+          ])
+      }
+
+      let page_info =
+        html.span([attribute.class("pagination-info")], [
+          html.text(
+            "Page "
+            <> int.to_string(current_page)
+            <> " of "
+            <> int.to_string(total_pages)
+            <> " ("
+            <> int.to_string(total_items)
+            <> " panels)",
+          ),
+        ])
+
+      html.div([attribute.class("pagination-controls")], [
+        prev_button,
+        page_info,
+        next_button,
+      ])
     }
   }
 }

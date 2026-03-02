@@ -1,26 +1,13 @@
-/// Panel Loading from CouchDB
+/// Panel Loading from Mnesia
 ///
-/// Loads panel data from CouchDB and converts markdown content to HTML.
-import mork
-
-import homeserve/couchdb
+/// Loads panel data from Mnesia and converts markdown content to HTML.
 import homeserve/db
 import homeserve/pages/panel/types.{type Panel, type ParseError}
+import mork
 
-/// Loads and parses a panel from CouchDB by index.
-pub fn load_panel(
-  config: couchdb.CouchConfig,
-  panel_index: Int,
-) -> Result(Panel, ParseError) {
-  db.load_panel(config, panel_index)
-}
-
-/// Decodes only the metadata for a panel from CouchDB by index.
-pub fn decode_meta(
-  config: couchdb.CouchConfig,
-  panel_index: Int,
-) -> Result(types.Meta, types.ParseError) {
-  db.load_meta(config, panel_index)
+/// Loads and parses a panel from Mnesia by index.
+pub fn load_panel(panel_index: Int) -> Result(Panel, ParseError) {
+  db.load_panel(panel_index)
 }
 
 /// Converts markdown content to HTML format for rendering.
