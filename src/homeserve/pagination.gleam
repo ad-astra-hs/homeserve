@@ -1,9 +1,14 @@
 //// Pagination Utilities
 ////
-//// Shared pagination functions for listing pages across the application.
+//// Shared pagination functions and components for listing pages across the application.
 
 import gleam/int
 import gleam/list
+import gleam/option.{type Option, None, Some}
+
+import lustre/attribute
+import lustre/element
+import lustre/element/html
 
 /// Default number of items per page
 pub const default_items_per_page = 10
@@ -43,4 +48,85 @@ pub fn get_page(items: List(a), page: Int, per_page: Int) -> List(a) {
 /// Calculate current page number clamped to valid range
 pub fn clamp_page(page: Int, total_pages: Int) -> Int {
   int.clamp(page, 1, int.max(1, total_pages))
+}
+
+/// Renders pagination controls with customizable URL generation
+///
+/// # Parameters
+/// - `current_page`: The current page number (1-indexed)
+/// - `total_pages`: Total number of pages
+/// - `prev_url`: Function that generates the URL for the previous page
+/// - `next_url`: Function that generates the URL for the next page  
+/// - `total_items`: Optional total item count to display (e.g., "Page 1 of 5 (42 panels)")
+///
+/// # Returns
+/// Lustre element with pagination controls, or empty element if only 1 page
+pub fn render_pagination(
+  current_page: Int,
+  total_pages: Int,
+  prev_url: fn(Int) -> String,
+  next_url: fn(Int) -> String,
+  total_items: Option(Int),
+) {
+  case total_pages <= 1 {
+    True -> element.none()
+    False -> {
+      let prev_button = case current_page > 1 {
+        True ->
+          html.a(
+            [
+              attribute.href(prev_url(current_page - 1)),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("← Previous")],
+          )
+        False ->
+          html.span([attribute.class("btn btn-disabled")], [
+            html.text("← Previous"),
+          ])
+      }
+
+      let next_button = case current_page < total_pages {
+        True ->
+          html.a(
+            [
+              attribute.href(next_url(current_page + 1)),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("Next →")],
+          )
+        False ->
+          html.span([attribute.class("btn btn-disabled")], [
+            html.text("Next →"),
+          ])
+      }
+
+      let page_info_text = case total_items {
+        Some(items) ->
+          "Page "
+          <> int.to_string(current_page)
+          <> " of "
+          <> int.to_string(total_pages)
+          <> " ("
+          <> int.to_string(items)
+          <> " panels)"
+        None ->
+          "Page "
+          <> int.to_string(current_page)
+          <> " of "
+          <> int.to_string(total_pages)
+      }
+
+      let page_info =
+        html.span([attribute.class("pagination-info")], [
+          html.text(page_info_text),
+        ])
+
+      html.div([attribute.class("pagination-controls")], [
+        prev_button,
+        page_info,
+        next_button,
+      ])
+    }
+  }
 }

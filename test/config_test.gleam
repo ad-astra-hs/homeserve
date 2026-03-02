@@ -140,10 +140,7 @@ pub fn validate_config_invalid_port_too_low_test() {
   let cfg =
     config.Config(
       server: config.ServerConfig(port: 0, host: "0.0.0.0"),
-      paths: config.PathsConfig(
-        assets_directory: "./priv/static/assets",
-        extra_directory: "./priv/static/extra",
-      ),
+      paths: config.PathsConfig(assets_directory: "./priv/static/assets"),
       mnesia: config.MnesiaConfig(data_dir: None),
       admin: config.AdminConfig(token: "test"),
       contact: config.ContactConfig(email: "test@example.com"),
@@ -167,10 +164,7 @@ pub fn validate_config_invalid_port_too_high_test() {
   let cfg =
     config.Config(
       server: config.ServerConfig(port: 100_000, host: "0.0.0.0"),
-      paths: config.PathsConfig(
-        assets_directory: "./priv/static/assets",
-        extra_directory: "./priv/static/extra",
-      ),
+      paths: config.PathsConfig(assets_directory: "./priv/static/assets"),
       mnesia: config.MnesiaConfig(data_dir: None),
       admin: config.AdminConfig(token: "test"),
       contact: config.ContactConfig(email: "test@example.com"),
@@ -193,10 +187,7 @@ pub fn validate_config_empty_host_test() {
   let cfg =
     config.Config(
       server: config.ServerConfig(port: 8000, host: ""),
-      paths: config.PathsConfig(
-        assets_directory: "./priv/static/assets",
-        extra_directory: "./priv/static/extra",
-      ),
+      paths: config.PathsConfig(assets_directory: "./priv/static/assets"),
       mnesia: config.MnesiaConfig(data_dir: None),
       admin: config.AdminConfig(token: "test"),
       contact: config.ContactConfig(email: "test@example.com"),
@@ -219,10 +210,7 @@ pub fn validate_config_empty_admin_token_test() {
   let cfg =
     config.Config(
       server: config.ServerConfig(port: 8000, host: "0.0.0.0"),
-      paths: config.PathsConfig(
-        assets_directory: "./priv/static/assets",
-        extra_directory: "./priv/static/extra",
-      ),
+      paths: config.PathsConfig(assets_directory: "./priv/static/assets"),
       mnesia: config.MnesiaConfig(data_dir: None),
       admin: config.AdminConfig(token: ""),
       contact: config.ContactConfig(email: "test@example.com"),
@@ -245,10 +233,7 @@ pub fn validate_config_invalid_email_test() {
   let cfg =
     config.Config(
       server: config.ServerConfig(port: 8000, host: "0.0.0.0"),
-      paths: config.PathsConfig(
-        assets_directory: "./priv/static/assets",
-        extra_directory: "./priv/static/extra",
-      ),
+      paths: config.PathsConfig(assets_directory: "./priv/static/assets"),
       mnesia: config.MnesiaConfig(data_dir: None),
       admin: config.AdminConfig(token: "test"),
       contact: config.ContactConfig(email: "invalid-email"),
@@ -271,10 +256,7 @@ pub fn validate_config_valid_email_test() {
   let cfg =
     config.Config(
       server: config.ServerConfig(port: 8000, host: "0.0.0.0"),
-      paths: config.PathsConfig(
-        assets_directory: "./priv/static/assets",
-        extra_directory: "./priv/static/extra",
-      ),
+      paths: config.PathsConfig(assets_directory: "./priv/static/assets"),
       mnesia: config.MnesiaConfig(data_dir: None),
       admin: config.AdminConfig(token: "test"),
       contact: config.ContactConfig(email: "valid@example.com"),

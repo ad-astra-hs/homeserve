@@ -1,24 +1,25 @@
 # Deployment Guide
 
-Deploy Homeserve with Caddy as a reverse proxy using Docker Compose.
+Complete guide for deploying Homeserve in production using Docker Compose with Caddy as a reverse proxy.
 
-## Prerequisites
+## 📋 Prerequisites
 
-- Docker and Docker Compose installed
+- [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/)
 - A server with ports 80 and 443 available
-- A domain name pointing to your server
+- A domain name with DNS pointing to your server
+- Basic familiarity with command line and Docker
 
-## Quick Start
+## 🚀 Quick Start
 
-### 1. Create Caddyfile
+### 1. Configure Caddy
 
-Copy the example and update your domain:
+Copy the example and customize for your domain:
 
 ```bash
 cp Caddyfile.example Caddyfile
 ```
 
-Edit `Caddyfile` and replace `homeserve.example.com` with your domain:
+Edit `Caddyfile` with your domain and paths:
 
 ```caddy
 yourdomain.com {
@@ -32,94 +33,96 @@ yourdomain.com {
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
-    # Serve static assets directly
+    # Serve static assets directly (bypasses the app)
     handle_path /assets/* {
         root * /path/to/homeserve/priv/static
         file_server
         header Cache-Control "public, max-age=604800"
     }
 
-    # Rate limit admin endpoints
-    handle_path /admin* {
-        rate_limit {
-            zone admin {
-                key {remote_host}
-                events 10
-                window 1m
-            }
-        }
-        reverse_proxy homeserve:8000
-    }
-
-    # Forward everything else to Homeserve
+    # Forward everything to Homeserve
     reverse_proxy homeserve:8000
 }
 ```
 
-### 2. Create homeserve.toml
+**Important:** Replace:
+- `yourdomain.com` with your actual domain
+- `/path/to/homeserve/priv/static` with the absolute path to your static files
+
+### 2. Configure Homeserve
 
 ```bash
 cp homeserve.example.toml homeserve.toml
 ```
 
-Edit `homeserve.toml` with your settings:
+Edit `homeserve.toml`:
 
 ```toml
 [server]
 port = 8000
 host = "0.0.0.0"
 
-# Optional: Custom data directory for Mnesia
-# [mnesia]
-# data_dir = "/var/lib/homeserve/mnesia"
+[mnesia]
+data_dir = "/app/data"
 
 [admin]
 # Generate with: gleam run -m setup token
-token = "sha256:..."
+token = "sha256:salt:hash"
 
 [contact]
-email = "admin@example.com"
+email = "admin@yourdomain.com"
+
+[logging]
+level = "info"
 ```
 
 ### 3. Create docker-compose.yml
 
 ```yaml
-version: '3'
+version: '3.8'
 
 services:
   homeserve:
     build: .
+    container_name: homeserve-app
     volumes:
-      # Persist Mnesia data
+      # Persist Mnesia database
       - mnesia_data:/app/data
-      # Mount config
+      # Mount configuration (read-only)
       - ./homeserve.toml:/app/homeserve.toml:ro
-      # Mount static assets
+      # Mount static assets (read-only)
       - ./priv/static:/app/priv/static:ro
     environment:
       - MNESIA_DATA_DIR=/app/data
+    restart: unless-stopped
+    networks:
+      - homeserve-network
 
   caddy:
-    image: caddy:builder
+    image: caddy:latest
+    container_name: homeserve-caddy
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
       - ./priv/static:/var/www/static:ro
     depends_on:
       - homeserve
-    # Build with rate_limit module
-    command: >
-      sh -c "xcaddy build --with github.com/mholt/caddy-ratelimit &&
-             caddy run --config /etc/caddy/Caddyfile"
+    restart: unless-stopped
+    networks:
+      - homeserve-network
 
 volumes:
   mnesia_data:
   caddy_data:
   caddy_config:
+
+networks:
+  homeserve-network:
+    driver: bridge
 ```
 
 ### 4. Deploy
@@ -128,156 +131,336 @@ volumes:
 # Build and start all services
 docker-compose up -d
 
-# Verify everything is running
+# Check status
 docker-compose ps
 
 # View logs
 docker-compose logs -f
+
+# Verify services are running
+curl http://localhost
 ```
 
-## First Setup
+## 🔐 First Setup
 
-Generate a secure admin token:
+### Generate Admin Token
+
+Before accessing the admin panel, generate a secure token:
 
 ```bash
 # Install dependencies locally
 gleam deps download
 
-# Generate token
+# Generate a secure hashed token
 gleam run -m setup token
 ```
 
-Copy the hashed token to your `homeserve.toml` and restart:
+You'll see output like:
+
+```
+Plaintext: my-secret-token-123
+Hashed: sha256:a1b2c3d4:hash-here
+
+Copy the hashed value to homeserve.toml:
+token = "sha256:a1b2c3d4:hash-here"
+```
+
+Update your `homeserve.toml` with the hashed token and restart:
 
 ```bash
 docker-compose restart homeserve
 ```
 
-## Security Checklist
+Access the admin panel at: `https://yourdomain.com/admin?token=my-secret-token-123`
 
-- [ ] Change default admin token
-- [ ] Use SHA-256 hashed token in production
-- [ ] Keep Caddy HTTPS automatic
-- [ ] Ensure Mnesia data directory has proper permissions
+## ✅ Security Checklist
 
-## Useful Commands
+Before going live, ensure:
+
+- [ ] **Admin token changed** - Not using default "changeme"
+- [ ] **Token hashed** - Using SHA-256 format for production
+- [ ] **HTTPS enabled** - Caddy automatically handles this
+- [ ] **Data directory secured** - Proper permissions on Mnesia data
+- [ ] **Static assets served by Caddy** - Configured in Caddyfile
+- [ ] **Contact email set** - For privacy policy page
+- [ ] **Logging configured** - Set to appropriate level (info for production)
+
+## 🔧 Operational Commands
+
+### Viewing Logs
 
 ```bash
-# View logs
+# All services
 docker-compose logs -f
 
-# Restart services
+# Specific service
+docker-compose logs -f homeserve
+docker-compose logs -f caddy
+
+# Last 100 lines
+docker-compose logs --tail=100 homeserve
+```
+
+### Restarting Services
+
+```bash
+# Restart all
 docker-compose restart
 
-# Update to latest version
+# Restart specific service
+docker-compose restart homeserve
+docker-compose restart caddy
+
+# Recreate and restart
+docker-compose up -d --force-recreate
+```
+
+### Updating Homeserve
+
+```bash
+# Pull latest code
 git pull
+
+# Rebuild and restart
 docker-compose up -d --build
 
-# Stop everything
+# Verify update
+docker-compose logs homeserve
+```
+
+### Stopping Services
+
+```bash
+# Stop but keep data
 docker-compose down
 
+# Stop and remove volumes (WARNING: data loss)
+docker-compose down -v
+```
+
+## 💾 Database Backup and Restore
+
+### Automatic Backups (Recommended)
+
+Create a backup script at `/usr/local/bin/backup-homeserve.sh`:
+
+```bash
+#!/bin/bash
+BACKUP_DIR="/var/backups/homeserve"
+DATE=$(date +%Y%m%d_%H%M%S)
+
+# Create backup directory
+mkdir -p "$BACKUP_DIR"
+
 # Backup Mnesia data
-docker exec homeserve-homeserve-1 tar czf - /app/data > backup.tar.gz
+docker exec homeserve-app tar czf - /app/data > "$BACKUP_DIR/homeserve_$DATE.tar.gz"
 
-# Restore Mnesia data
-docker exec -i homeserve-homeserve-1 tar xzf - -C /app/data < backup.tar.gz
+# Keep only last 7 backups
+ls -1t "$BACKUP_DIR"/*.tar.gz | tail -n +8 | xargs rm -f
+
+echo "Backup completed: homeserve_$DATE.tar.gz"
 ```
 
-## Mnesia Database
+Make it executable and add to crontab:
 
-Homeserve uses Mnesia, Erlang/BEAM's built-in distributed database. No external database is required!
+```bash
+chmod +x /usr/local/bin/backup-homeserve.sh
 
-### Data Storage
-
-- By default, Mnesia stores data in the Erlang Mnesia directory
-- For Docker deployments, a volume is mounted at `/app/data`
-- You can specify a custom directory in `homeserve.toml`:
-
-```toml
-[mnesia]
-data_dir = "/var/lib/homeserve/mnesia"
+# Add to crontab (daily at 2 AM)
+echo "0 2 * * * /usr/local/bin/backup-homeserve.sh" | crontab -
 ```
 
-### Understanding Storage Modes
+### Manual Backup
+
+```bash
+# Create backup
+docker exec homeserve-app tar czf - /app/data > homeserve-backup-$(date +%Y%m%d).tar.gz
+
+# Verify backup
+tar tzf homeserve-backup-*.tar.gz
+```
+
+### Manual Restore
+
+⚠️ **Warning:** This will overwrite existing data. Stop Homeserve first.
+
+```bash
+# Stop homeserve
+docker-compose stop homeserve
+
+# Restore from backup
+docker exec -i homeserve-app tar xzf - -C /app/data < homeserve-backup-20240101.tar.gz
+
+# Restart
+docker-compose start homeserve
+```
+
+### Backup Strategy
+
+| Environment | Frequency | Retention | Method |
+|-------------|-----------|-----------|--------|
+| Production | Daily | 7 days | Automated script |
+| Production | Before updates | Permanent | Manual snapshot |
+| Staging | Weekly | 4 weeks | Manual |
+| Development | As needed | None | None |
+
+## 🗄️ Mnesia Database
+
+Homeserve uses [Mnesia](https://www.erlang.org/doc/apps/mnesia/mnesia.html), Erlang/BEAM's built-in distributed database. No external database server is required!
+
+### Storage Modes
 
 Mnesia operates in two storage modes:
 
-1. **`disc_copies`** (Persistent) - Data survives restarts
-   - Enabled when running with Erlang node name: `ERL_FLAGS="-sname homeserve"`
-   - Data stored in Mnesia directory (configurable via `data_dir`)
-   
-2. **`ram_copies`** (In-Memory) - Data lost on restart
-   - Used when running without node name: `gleam run`
-   - Useful for development and testing
+| Mode | Persistence | Use Case | Activation |
+|------|-------------|----------|------------|
+| `disc_copies` | Data survives restarts | Production | `ERL_FLAGS="-sname homeserve"` |
+| `ram_copies` | Data lost on restart | Development | Run without node name |
 
-### Backup and Restore
+### Data Location
 
-#### Method 1: File System Backup (Recommended)
+- **Docker**: `/app/data` (volume `mnesia_data`)
+- **Host**: Default Erlang Mnesia directory
+- **Custom**: Configurable via `homeserve.toml`
 
-When using persistent storage (`disc_copies`), Mnesia stores data in regular files:
+### Database Schema
 
-```bash
-# Find your Mnesia data directory
-# Default: ./Mnesia.homeserve@hostname/ in project root
-# Or: configured data_dir from homeserve.toml
+The database consists of two tables:
 
-# Backup while running (Mnesia supports hot backups)
-tar czf homeserve-backup-$(date +%Y%m%d).tar.gz Mnesia.homeserve@*/
+1. **panel** - Stores comic panels (key: integer index)
+2. **volunteer** - Stores volunteer profiles (key: string name)
 
-# Restore (stop application first)
-# 1. Stop homeserve
-# 2. Extract backup
-tar xzf homeserve-backup-20240101.tar.gz
-# 3. Start homeserve
+## 🐛 Troubleshooting
+
+### Data Not Persisting
+
+**Symptoms:** Data lost after container restart
+
+**Solutions:**
+1. Ensure you're using persistent storage mode
+2. Check the volume is mounted correctly:
+   ```bash
+   docker volume inspect homeserve_mnesia_data
+   ```
+3. Verify `data_dir` in homeserve.toml matches the volume mount
+
+### SSL Certificate Issues
+
+**Symptoms:** HTTPS not working or certificate errors
+
+**Solutions:**
+1. Ensure ports 80 and 443 are open
+2. Check DNS is pointing to the correct IP
+3. Verify Caddy can reach Let's Encrypt:
+   ```bash
+   docker-compose logs caddy
+   ```
+
+### Cannot Access Admin Panel
+
+**Symptoms:** 401 Unauthorized errors
+
+**Solutions:**
+1. Verify token in URL matches the plaintext version
+2. Check token format in homeserve.toml:
+   - Plaintext: `token = "my-secret"`
+   - Hashed: `token = "sha256:salt:hash"`
+3. Ensure token is properly quoted
+
+### Database Schema Errors
+
+**Symptoms:** Mnesia errors in logs
+
+**Solutions:**
+1. Schema is tied to node name - changing it recreates the schema
+2. If switching between `ram_copies` and `disc_copies`, data is lost
+3. To reset the database:
+   ```bash
+   docker-compose down -v
+   docker-compose up -d
+   ```
+
+### High Memory Usage
+
+**Symptoms:** Container using too much RAM
+
+**Solutions:**
+1. Mnesia loads entire tables into memory - this is normal
+2. For large datasets, consider implementing pagination
+3. Monitor memory usage:
+   ```bash
+   docker stats homeserve-app
+   ```
+
+## 📝 Configuration Reference
+
+### Homeserve Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MNESIA_DATA_DIR` | Mnesia data directory | `./data` |
+| `ERL_FLAGS` | Erlang runtime flags | `-sname homeserve` |
+
+### Docker Compose Options
+
+```yaml
+# Resource limits (add to homeserve service)
+deploy:
+  resources:
+    limits:
+      memory: 512M
+      cpus: '1.0'
+    reservations:
+      memory: 256M
+      cpus: '0.5'
 ```
 
-#### Method 2: Docker Volume Backup
+### Caddy Advanced Options
 
-```bash
-# Backup
-docker run --rm -v homeserve_mnesia_data:/data -v $(pwd):/backup alpine \
-  tar czf /backup/mnesia-backup.tar.gz -C /data .
+```caddy
+# Enable access logging
+log {
+    output file /var/log/caddy/access.log
+    format json
+}
 
-# Restore (with homeserve stopped)
-docker run --rm -v homeserve_mnesia_data:/data -v $(pwd):/backup alpine \
-  sh -c "rm -rf /data/* && tar xzf /backup/mnesia-backup.tar.gz -C /data"
+# Custom error pages
+handle_errors {
+    rewrite * /error.html
+    file_server
+}
 ```
 
-#### Method 3: Mnesia Native Backup (Advanced)
+## 📊 Monitoring
 
-For consistent backups during heavy write loads:
+### Health Checks
 
-```erlang
-%% In Erlang shell (gleam shell)
-mnesia:backup("/path/to/backup.bup").
+Add to `docker-compose.yml`:
 
-%% To restore:
-mnesia:restore("/path/to/backup.bup", [{default, recreate_tables}]).
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 10s
 ```
 
-### Backup Strategy Recommendations
+### Log Rotation
 
-| Environment | Frequency | Method |
-|-------------|-----------|--------|
-| Production | Daily + before updates | Docker volume or filesystem backup |
-| Staging | Weekly | Filesystem backup |
-| Development | As needed | None (use ram_copies) |
+Add to `docker-compose.yml` for Caddy:
 
-### Troubleshooting
+```yaml
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+```
 
-**Issue: Data not persisting after restart**
-- Check you're running with node name: `ERL_FLAGS="-sname homeserve"`
-- Verify data directory permissions
-- Check logs for schema creation messages
+## 🔗 External Resources
 
-**Issue: Schema errors when switching node names**
-- Mnesia schema is tied to the node name
-- When changing from `nonode@nohost` to `homeserve@hostname`, schema is recreated automatically
-- Data from `ram_copies` is lost when switching to `disc_copies`
-
-**Issue: Backup restoration fails**
-- Ensure homeserve is stopped during restore
-- Verify backup file integrity: `tar tzf backup.tar.gz`
-- Check ownership/permissions of restored files
-
-
+- [Caddy Documentation](https://caddyserver.com/docs/)
+- [Docker Compose Reference](https://docs.docker.com/compose/compose-file/)
+- [Mnesia User Guide](https://www.erlang.org/doc/apps/mnesia/mnesia.html)
+- [Homeserve README](README.md)

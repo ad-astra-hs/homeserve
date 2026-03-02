@@ -1,54 +1,60 @@
 # Homeserve 🏠
 
-A selfhosted webcomic server built with Gleam. Stores panels in Mnesia (Erlang's built-in database) for reliability and serves them with simplicity.
+A self-hosted webcomic server built with [Gleam](https://gleam.run/). Stores panels and volunteer data in Mnesia (Erlang's built-in database) for reliability and serves them with simplicity.
 
-## What it does
+## ✨ Features
 
-Homeserve lets you:
-- Serve webcomics from Mnesia with markdown content
-- Add images, videos, and audio to your comics
-- Keep track of contributors with a Hall of Fame
-- Customize any panels with CSS and JavaScript
-- Manage panels via an admin web interface
-- Manage volunteer/collaborator profiles via the admin interface
+- **Webcomic hosting** - Serve comics with markdown content
+- **Rich media support** - Add images, videos, and audio to panels
+- **Hall of Fame** - Track contributors and volunteers
+- **Custom styling** - Per-panel CSS and JavaScript support
+- **Admin interface** - Web-based management for panels and volunteers
+- **Type-safe** - Built with Gleam's type system for reliability
 
-## Requirements
+## 📋 Requirements
 
-- [Gleam](https://gleam.run/) installed
-- [Erlang/OTP](https://www.erlang.org/) (for Mnesia database)
+- [Gleam](https://gleam.run/) (latest version)
+- [Erlang/OTP](https://www.erlang.org/) (for Mnesia database and runtime)
 
-## Quick Start
+## 🚀 Quick Start
 
-1. Clone this repo and enter the directory
+### 1. Get the code
 
-2. Copy and customize the config:
-   ```bash
-   cp homeserve.example.toml homeserve.toml
-   ```
+```bash
+git clone <repo-url>
+cd homeserve
+```
 
-3. Verify database initialization:
-   ```bash
-   # Verify Mnesia is initialized (with persistent storage)
-   ERL_FLAGS="-sname homeserve" gleam run -m setup verify
+### 2. Configure
 
-   # Generate a secure admin token (recommended for production)
-   gleam run -m setup token
-   ```
+```bash
+cp homeserve.example.toml homeserve.toml
+# Edit homeserve.toml with your settings
+```
 
-4. Start the server with persistent storage:
-   ```bash
-   # Using just (recommended)
-   just run
+### 3. Initialize database
 
-   # Or manually with ERL_FLAGS
-   ERL_FLAGS="-sname homeserve" gleam run
-   ```
+```bash
+# Verify Mnesia is ready (persistent storage mode)
+ERL_FLAGS="-sname homeserve" gleam run -m setup verify
 
-5. Visit `http://localhost:8000`
+# Generate a secure admin token for production
+gleam run -m setup token
+```
 
-### Development Mode
+### 4. Run the server
 
-For development, you can run without the node name (data will be stored in memory only):
+**Production mode** (data persists between restarts):
+
+```bash
+# Using just (recommended)
+just run
+
+# Or manually
+ERL_FLAGS="-sname homeserve" gleam run
+```
+
+**Development mode** (data in memory only, lost on restart):
 
 ```bash
 just run-dev
@@ -56,15 +62,16 @@ just run-dev
 gleam run
 ```
 
-## Data Structures
+Visit `http://localhost:8000` to see your comic!
+
+## 📊 Data Structure
 
 ### Panels
 
-Panels are stored as records in Mnesia with this structure:
+Panels are stored in Mnesia with this structure:
 
 ```json
 {
-  "type": "panel",
   "meta": {
     "index": 1,
     "title": "My Awesome Comic",
@@ -89,83 +96,81 @@ Panels are stored as records in Mnesia with this structure:
 }
 ```
 
-## Admin Panel
+## 🎛️ Admin Panel
 
-Access the admin panel at `/admin?token=YOUR_TOKEN` (set in `homeserve.toml`).
+Access at: `/admin?token=YOUR_TOKEN`
 
-From there you can:
-- Create new panels
-- Edit existing panels
-- Delete panels
-- View all panels and their status
+**Panel management:**
+- Create, edit, and delete panels
+- View all panels and their draft status
 
-### Volunteer Management
-
-Volunteers/collaborators can be managed from `/admin/volunteers?token=YOUR_TOKEN`:
-- Create volunteer profiles with name, bio, and social links
-- Edit existing volunteer information
-- Delete volunteers
+**Volunteer management** at `/admin/volunteers?token=YOUR_TOKEN`:
+- Create volunteer profiles (name, bio, social links)
+- Edit and delete volunteers
 - View all volunteers
 
-Volunteer profiles appear on contributor pages (`/hoc/<name>`) when a contributor matches a volunteer name.
+Volunteer profiles appear on `/hoc/<name>` pages when names match.
 
-## Configuration
+## ⚙️ Configuration
 
-See `homeserve.example.toml` for all available options including:
-- Server port and host
-- Mnesia data directory (optional)
-- Admin authentication token
-- Contact email (for privacy policy)
+Key options in `homeserve.toml`:
 
-## Production Deployment
+| Section | Key | Description | Default |
+|---------|-----|-------------|---------|
+| `[server]` | `port` | HTTP port | 8000 |
+| `[server]` | `host` | Bind address | 0.0.0.0 |
+| `[mnesia]` | `data_dir` | Database location | Mnesia default |
+| `[admin]` | `token` | Admin auth token | changeme |
+| `[contact]` | `email` | Contact address | admin@example.com |
+| `[logging]` | `level` | Log level | info |
+
+See `homeserve.example.toml` for all options.
+
+## 🌐 Production Deployment
 
 ### Using Caddy (Recommended)
 
-For production, run Homeserve behind a reverse proxy like [Caddy](https://caddyserver.com/):
+Caddy provides HTTPS, static file serving, and security headers:
 
 ```bash
-# Install Caddy
-# See https://caddyserver.com/docs/install
+# Install Caddy (https://caddyserver.com/docs/install)
 
-# Use the example Caddyfile
+# Setup configuration
 cp Caddyfile.example Caddyfile
 # Edit Caddyfile with your domain
 
-# Run Caddy
+# Start Caddy
 caddy run --config Caddyfile
 ```
 
-Caddy handles:
-- **HTTPS** (automatic Let's Encrypt certificates)
-- **Static assets** (served directly, bypassing the app)
-- **Rate limiting** (configured for admin endpoints)
-- **Compression** (gzip/brotli)
+**What Caddy handles:**
+- Automatic HTTPS (Let's Encrypt certificates)
+- Static asset serving (bypasses the app)
+- Compression (gzip/brotli)
+- Security headers
 
 ### Admin Token Security
 
-For production, use a SHA-256 hashed admin token:
+For production, generate a SHA-256 hashed token:
 
 ```bash
-# Generate a secure token
 gleam run -m setup token
-
-# Copy the hashed value to homeserve.toml
-token = "sha256:..."
+# Copy output to homeserve.toml:
+# token = "sha256:salt:hash"
 ```
 
-Users still enter the plaintext token, but the config only stores the hash.
+Users enter the plaintext token; only the hash is stored.
 
-### Mnesia Data Persistence
+### Data Persistence
 
-Mnesia requires an Erlang node name to enable persistent disk storage (`disc_copies`). Without it, data is stored in RAM only (`ram_copies`).
-
-**To enable persistent storage, start with a node name:**
+Mnesia requires an Erlang node name for persistent disk storage:
 
 ```bash
+# Use this for production (data survives restarts)
 ERL_FLAGS="-sname homeserve" gleam run
 ```
 
-Or use `just run` which sets this automatically.
+Without the node name, data is stored in RAM only (development mode).
 
 **Custom data directory:**
 
@@ -174,23 +179,28 @@ Or use `just run` which sets this automatically.
 data_dir = "/var/lib/homeserve/mnesia"
 ```
 
-Make sure the directory exists and is writable by the user running Homeserve.
+Ensure the directory exists and is writable.
 
-## Architecture
+## 🏗️ Architecture
 
-Built with Gleam → Erlang/BEAM for concurrency and reliability.
+Homeserve is built with modern, type-safe technologies:
 
-- **Mnesia**: Built-in Erlang/BEAM database for storing panels and volunteers
-- **SHA-256**: Secure hashing for admin tokens
-- **Lustre**: HTML rendering with type-safe CSS
+| Component | Technology |
+|-----------|------------|
+| Language | Gleam (compiles to Erlang/BEAM) |
+| Database | Mnesia (built into Erlang) |
+| Web Framework | Wisp |
+| HTML/CSS | Lustre + Sketch |
+| Markdown | Mork |
+| Auth | SHA-256 token hashing |
+| Rate Limiting | Application-layer (in-memory) |
 
-Rate limiting for admin endpoints is handled by Caddy (reverse proxy).
+## 📚 Documentation
 
-## Documentation
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** - Detailed deployment guide with Docker
+- **[Caddyfile.example](Caddyfile.example)** - Example reverse proxy configuration
+- **[AGENTS.md](AGENTS.md)** - Development guide for contributors
 
-- **[DEPLOYMENT.md](DEPLOYMENT.md)**: Detailed deployment guide with Caddy
-- **[Caddyfile.example](Caddyfile.example)**: Example reverse proxy configuration with rate limiting
-
-## License
+## 📄 License
 
 See [LICENSE](LICENSE) file.

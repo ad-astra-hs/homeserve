@@ -4,46 +4,26 @@
 //// across the application. Supports Debug and Info level logging.
 //// Log level can be configured at runtime via config file.
 
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang
 import gleam/erlang/atom.{type Atom}
 import gleam/int
 import gleam/option.{type Option, None, Some}
 import wisp
 
-// ---- ETS Table Bindings ----
+import homeserve/ets
 
-@external(erlang, "ets", "new")
-fn ets_new(name: Atom, options: List(Dynamic)) -> Atom
-
-@external(erlang, "ets", "lookup")
-fn ets_lookup_level(table: Atom, key: Atom) -> List(#(Atom, String))
-
-@external(erlang, "ets", "insert")
-fn ets_insert_level(table: Atom, record: #(Atom, String)) -> Bool
-
-// ---- Table Management ----
+// ---- ETS Table ----
 
 fn log_table() -> Atom {
-  atom.create_from_string("homeserve_config")
+  ets.table_name("homeserve_config")
 }
 
 fn log_level_key() -> Atom {
-  atom.create_from_string("log_level")
+  ets.atom("log_level")
 }
 
 /// Initialise the ETS table. Call once at application startup.
 pub fn init() -> Nil {
-  let _ =
-    erlang.rescue(fn() {
-      ets_new(log_table(), [
-        dynamic.from(atom.create_from_string("set")),
-        dynamic.from(atom.create_from_string("public")),
-        dynamic.from(atom.create_from_string("named_table")),
-        dynamic.from(#(atom.create_from_string("read_concurrency"), True)),
-      ])
-    })
-  Nil
+  ets.create_named_table(log_table(), ets.public_set_options())
 }
 
 // ---- Log Level Configuration ----
@@ -59,7 +39,7 @@ pub type LogLevel {
 /// Sets the minimum log level at runtime
 pub fn set_log_level(level: LogLevel) -> Nil {
   init()
-  ets_insert_level(log_table(), #(log_level_key(), log_level_to_string(level)))
+  ets.insert(log_table(), #(log_level_key(), log_level_to_string(level)))
   wisp.log_info("Log level changed to: " <> log_level_to_string(level))
   Nil
 }
@@ -67,7 +47,7 @@ pub fn set_log_level(level: LogLevel) -> Nil {
 /// Gets the current minimum log level
 pub fn get_log_level() -> LogLevel {
   init()
-  case ets_lookup_level(log_table(), log_level_key()) {
+  case ets.lookup(log_table(), log_level_key()) {
     [#(_, level)] -> string_to_log_level(level)
     _ -> Info
   }

@@ -7,6 +7,9 @@ import gleeunit
 import gleeunit/should
 
 import homeserve/pages/admin/util
+import homeserve/pages/admin/validation.{
+  FieldTooLong, InvalidCharacters, InvalidUrl, MissingRequiredField,
+}
 import homeserve/pages/panel/types.{Image, Video}
 import wisp
 
@@ -23,7 +26,7 @@ pub fn validate_title_empty_test() {
     Error(errors) -> {
       list.any(errors, fn(e) {
         case e {
-          util.MissingRequiredField("title") -> True
+          MissingRequiredField("title") -> True
           _ -> False
         }
       })
@@ -40,7 +43,7 @@ pub fn validate_title_whitespace_only_test() {
     Error(errors) -> {
       list.any(errors, fn(e) {
         case e {
-          util.MissingRequiredField("title") -> True
+          MissingRequiredField("title") -> True
           _ -> False
         }
       })
@@ -58,7 +61,7 @@ pub fn validate_title_null_bytes_test() {
     Error(errors) -> {
       list.any(errors, fn(e) {
         case e {
-          util.InvalidCharacters("title") -> True
+          InvalidCharacters("title") -> True
           _ -> False
         }
       })
@@ -104,7 +107,7 @@ pub fn validate_media_url_javascript_test() {
     Error(errors) -> {
       list.any(errors, fn(e) {
         case e {
-          util.InvalidUrl("media_url") -> True
+          InvalidUrl("media_url") -> True
           _ -> False
         }
       })
@@ -150,7 +153,7 @@ pub fn validate_content_null_bytes_test() {
     Error(errors) -> {
       list.any(errors, fn(e) {
         case e {
-          util.InvalidCharacters("content") -> True
+          InvalidCharacters("content") -> True
           _ -> False
         }
       })
@@ -254,10 +257,10 @@ pub fn build_panel_validation_errors_test() {
 
 pub fn format_validation_errors_test() {
   let errors = [
-    util.MissingRequiredField("title"),
-    util.InvalidUrl("media_url"),
-    util.InvalidCharacters("content"),
-    util.FieldTooLong("title", 200),
+    MissingRequiredField("title"),
+    InvalidUrl("media_url"),
+    InvalidCharacters("content"),
+    FieldTooLong("title", 200),
   ]
 
   let formatted = util.format_validation_errors(errors)

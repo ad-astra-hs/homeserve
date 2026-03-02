@@ -5,10 +5,15 @@
 # 2. Serves static assets efficiently
 # 3. Enables compression
 # 4. Adds security headers
-# 5. Rate limits admin endpoints
+# 
+# Usage:
+# 1. Copy this file to Caddyfile
+# 2. Replace 'homeserve.example.com' with your domain
+# 3. Update the root path for static assets
+# 4. Run: caddy run --config Caddyfile
 
 homeserve.example.com {
-    # Enable compression
+    # Enable compression for faster loading
     encode gzip zstd
 
     # Security headers
@@ -23,8 +28,8 @@ homeserve.example.com {
         Referrer-Policy "strict-origin-when-cross-origin"
     }
 
-    # Static file serving (optional but recommended)
-    # This serves assets directly without hitting the Gleam app
+    # Serve static files directly without hitting the Gleam app
+    # This significantly improves performance for images, CSS, JS, etc.
     handle_path /assets/* {
         root * /path/to/homeserve/priv/static
         file_server
@@ -32,24 +37,7 @@ homeserve.example.com {
         header Cache-Control "public, max-age=604800"
     }
 
-    # Rate limit admin endpoints: 10 requests per minute per IP
-    handle_path /admin* {
-        rate_limit {
-            zone admin {
-                key {remote_host}
-                events 10
-                window 1m
-            }
-        }
-        reverse_proxy localhost:8000 {
-            header_up X-Forwarded-For {remote}
-            header_up X-Real-IP {remote}
-            header_up Host {host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
-
-    # Proxy all other requests to Homeserve
+    # Proxy all requests to Homeserve
     reverse_proxy localhost:8000 {
         # Forward the real client IP
         header_up X-Forwarded-For {remote}
@@ -63,25 +51,12 @@ homeserve.example.com {
     }
 }
 
-# Alternative: Local development with HTTP
-:8080 {
-    # Rate limit admin endpoints for development too
-    handle_path /admin* {
-        rate_limit {
-            zone admin {
-                key {remote_host}
-                events 10
-                window 1m
-            }
-        }
-        reverse_proxy localhost:8000 {
-            header_up X-Forwarded-For {remote}
-            header_up X-Real-IP {remote}
-        }
-    }
-
-    reverse_proxy localhost:8000 {
-        header_up X-Forwarded-For {remote}
-        header_up X-Real-IP {remote}
-    }
-}
+# Alternative: Local development with HTTP (no HTTPS)
+# Replace the above block with this for local testing:
+#
+# :8080 {
+#     reverse_proxy localhost:8000 {
+#         header_up X-Forwarded-For {remote}
+#         header_up X-Real-IP {remote}
+#     }
+# }

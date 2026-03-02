@@ -474,67 +474,21 @@ fn render_contributor_pagination(
   total_pages: Int,
   total_items: Int,
 ) {
-  case total_pages <= 1 {
-    True -> element.none()
-    False -> {
-      let prev_button = case current_page > 1 {
-        True ->
-          html.a(
-            [
-              attribute.href(
-                "/hoc/"
-                <> uri.percent_encode(contributor)
-                <> "?page="
-                <> int.to_string(current_page - 1),
-              ),
-              attribute.class("btn btn-secondary"),
-            ],
-            [html.text("← Previous")],
-          )
-        False ->
-          html.span([attribute.class("btn btn-disabled")], [
-            html.text("← Previous"),
-          ])
-      }
-
-      let next_button = case current_page < total_pages {
-        True ->
-          html.a(
-            [
-              attribute.href(
-                "/hoc/"
-                <> uri.percent_encode(contributor)
-                <> "?page="
-                <> int.to_string(current_page + 1),
-              ),
-              attribute.class("btn btn-secondary"),
-            ],
-            [html.text("Next →")],
-          )
-        False ->
-          html.span([attribute.class("btn btn-disabled")], [
-            html.text("Next →"),
-          ])
-      }
-
-      let page_info =
-        html.span([attribute.class("pagination-info")], [
-          html.text(
-            "Page "
-            <> int.to_string(current_page)
-            <> " of "
-            <> int.to_string(total_pages)
-            <> " ("
-            <> int.to_string(total_items)
-            <> " panels)",
-          ),
-        ])
-
-      html.div([attribute.class("pagination-controls")], [
-        prev_button,
-        page_info,
-        next_button,
-      ])
-    }
-  }
+  pagination.render_pagination(
+    current_page,
+    total_pages,
+    fn(page) {
+      "/hoc/"
+      <> uri.percent_encode(contributor)
+      <> "?page="
+      <> int.to_string(page)
+    },
+    fn(page) {
+      "/hoc/"
+      <> uri.percent_encode(contributor)
+      <> "?page="
+      <> int.to_string(page)
+    },
+    Some(total_items),
+  )
 }

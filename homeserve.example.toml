@@ -22,13 +22,9 @@ host = "0.0.0.0"
 # =============================================================================
 
 [paths]
-# Directory containing static assets (images, audio, video files).
+# Directory containing static assets (images, audio, video, CSS, JS files).
 # These files are served directly at /assets/<filename>
 assets_directory = "./priv/static/assets"
-
-# Directory containing optional per-panel CSS and JavaScript files.
-# Files here are served at /assets/misc/<filename>
-extra_directory = "./priv/static/extra"
 
 # =============================================================================
 # MNESIA CONFIGURATION (OPTIONAL)

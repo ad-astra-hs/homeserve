@@ -11,6 +11,7 @@ import homeserve/config
 import homeserve/db
 import homeserve/pages/admin/auth
 import homeserve/pages/admin/util
+import homeserve/pages/admin/validation.{InvalidUrl}
 import homeserve/pages/panel/types
 import homeserve/volunteers
 import wisp
@@ -334,7 +335,7 @@ pub fn build_panel_from_form_invalid_url_test() {
       let has_url_error =
         list.any(errors, fn(e) {
           case e {
-            util.InvalidUrl("media_url") -> True
+            InvalidUrl("media_url") -> True
             _ -> False
           }
         })

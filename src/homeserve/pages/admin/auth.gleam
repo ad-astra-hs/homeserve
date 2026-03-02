@@ -123,6 +123,16 @@ pub fn validate_csrf_token(req: Request, form_token: String) -> Bool {
   }
 }
 
+/// Sets the CSRF token as a signed cookie on the response.
+/// Default expiration is 1 hour (3600 seconds).
+pub fn set_csrf_cookie(
+  resp: Response,
+  req: Request,
+  csrf_token: String,
+) -> Response {
+  wisp.set_cookie(resp, req, "csrf_token", csrf_token, wisp.Signed, 3600)
+}
+
 /// Render the login page response
 pub fn render_login_page() -> Response {
   wisp.response(401)

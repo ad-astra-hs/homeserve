@@ -75,10 +75,9 @@ pub fn handle_request(req: Request, cfg: Config) -> Response {
       serve_hoc(req, Some(decoded), page)
     }
 
-    // Media assets (music, panels, etc.)
-    ["assets", asset] -> assets.serve_asset(req, asset, cfg)
-    ["assets", "misc", extra] -> assets.serve_extra(req, extra, cfg)
-    ["favicon.ico"] -> assets.serve_asset(req, "logo.png", cfg)
+    // Static assets (images, audio, video, CSS, JS)
+    ["assets", ..path] -> assets.serve_assets(req, path, cfg)
+    ["favicon.ico"] -> assets.serve_assets(req, ["logo.png"], cfg)
 
     // Misc. redirects
     ["discord"] -> wisp.redirect("https://discord.gg/TjMT9gsVPT")

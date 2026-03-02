@@ -8,6 +8,10 @@ import gleam/string
 import homeserve/base
 import homeserve/utils
 
+import homeserve/pages/admin/validation.{
+  type ValidationError, FieldTooLong, InvalidCharacters, InvalidUrl,
+  MissingRequiredField,
+}
 import homeserve/pages/panel/types.{
   type Panel, Credits, Image, Media, Meta, Panel as PanelConstructor, Video,
 }
@@ -26,14 +30,6 @@ const max_url_length = 1000
 const max_contributor_name_length = 100
 
 const max_css_js_filename_length = 100
-
-/// Validation result type
-pub type ValidationError {
-  FieldTooLong(field: String, max: Int)
-  InvalidUrl(field: String)
-  InvalidCharacters(field: String)
-  MissingRequiredField(field: String)
-}
 
 /// Get current Unix timestamp in seconds.
 pub fn current_timestamp() -> Int {
@@ -277,58 +273,74 @@ pub fn format_validation_errors(errors: List(ValidationError)) -> String {
   |> string.join("; ")
 }
 
-// ---- Page Rendering Helpers ----
+/// Status page types for rendering
+pub type StatusPageType {
+  ErrorPage
+  SuccessPage
+}
+
+/// Renders a status page (error or success) with links.
+///
+/// # Parameters
+/// - `page_type`: Whether to render an error or success page
+/// - `message`: The message to display
+/// - `links`: List of #(url, text) tuples for navigation links
+/// - `status`: HTTP status code
+///
+/// # Returns
+/// HTTP response with the rendered page
+pub fn render_status_page(
+  page_type: StatusPageType,
+  message: String,
+  links: List(#(String, String)),
+  status: Int,
+) -> Response {
+  let #(title_suffix, heading) = case page_type {
+    ErrorPage -> #("Error", "ERROR")
+    SuccessPage -> #("Success", "SUCCESS")
+  }
+
+  let link_elements =
+    list.map(links, fn(link) {
+      let #(url, text) = link
+      html.h2([], [
+        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
+          html.text("> " <> text),
+        ]),
+      ])
+    })
+
+  let page =
+    base.Page(
+      head: [html.title([], title_suffix <> " | Homeserve")],
+      css: [],
+      body: [
+        html.div([attribute.class("dead-center")], [
+          html.h1([], [html.text(heading)]),
+          html.p([], [html.text(message)]),
+          ..link_elements
+        ]),
+      ],
+    )
+  wisp.response(status) |> wisp.html_body(base.render_page(page))
+}
 
 /// Renders an error page response.
+/// @deprecated Use render_status_page(ErrorPage, ...) instead
 pub fn render_error_page(
   message: String,
   links: List(#(String, String)),
   status: Int,
 ) -> Response {
-  let link_elements =
-    list.map(links, fn(link) {
-      let #(url, text) = link
-      html.h2([], [
-        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
-          html.text("> " <> text),
-        ]),
-      ])
-    })
-
-  let page =
-    base.Page(head: [html.title([], "Error | Homeserve")], css: [], body: [
-      html.div([attribute.class("dead-center")], [
-        html.h1([], [html.text("ERROR")]),
-        html.p([], [html.text(message)]),
-        ..link_elements
-      ]),
-    ])
-  wisp.response(status) |> wisp.html_body(base.render_page(page))
+  render_status_page(ErrorPage, message, links, status)
 }
 
 /// Renders a success page response.
+/// @deprecated Use render_status_page(SuccessPage, ...) instead
 pub fn render_success_page(
   message: String,
   links: List(#(String, String)),
   status: Int,
 ) -> Response {
-  let link_elements =
-    list.map(links, fn(link) {
-      let #(url, text) = link
-      html.h2([], [
-        html.a([attribute.href(url), attribute.class("btn btn-primary")], [
-          html.text("> " <> text),
-        ]),
-      ])
-    })
-
-  let page =
-    base.Page(head: [html.title([], "Success | Homeserve")], css: [], body: [
-      html.div([attribute.class("dead-center")], [
-        html.h1([], [html.text("SUCCESS")]),
-        html.p([], [html.text(message)]),
-        ..link_elements
-      ]),
-    ])
-  wisp.response(status) |> wisp.html_body(base.render_page(page))
+  render_status_page(SuccessPage, message, links, status)
 }

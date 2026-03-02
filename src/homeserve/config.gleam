@@ -63,7 +63,7 @@ pub type ServerConfig {
 
 /// Path-related configuration.
 pub type PathsConfig {
-  PathsConfig(assets_directory: String, extra_directory: String)
+  PathsConfig(assets_directory: String)
 }
 
 /// Errors that can occur when loading configuration.
@@ -83,8 +83,6 @@ const default_port = 8000
 const default_host = "0.0.0.0"
 
 const default_assets_directory = "./priv/static/assets"
-
-const default_extra_directory = "./priv/static/extra"
 
 const default_admin_token = "changeme"
 
@@ -152,10 +150,7 @@ pub fn load_from(path: String) -> Config {
 pub fn default_config() -> Config {
   Config(
     server: ServerConfig(port: default_port, host: default_host),
-    paths: PathsConfig(
-      assets_directory: default_assets_directory,
-      extra_directory: default_extra_directory,
-    ),
+    paths: PathsConfig(assets_directory: default_assets_directory),
     mnesia: MnesiaConfig(data_dir: None),
     admin: AdminConfig(token: default_admin_token),
     contact: ContactConfig(email: default_contact_email),
@@ -235,11 +230,6 @@ pub fn validate_config(config: Config) -> List(ValidationError) {
     False -> errors
   }
 
-  let errors = case string.is_empty(config.paths.extra_directory) {
-    True -> [InvalidNonEmptyString("paths.extra_directory"), ..errors]
-    False -> errors
-  }
-
   // Validate admin config
   let errors = case string.is_empty(config.admin.token) {
     True -> [InvalidNonEmptyString("admin.token"), ..errors]
@@ -288,9 +278,6 @@ fn parse_config(
   let assets_dir =
     tom.get_string(toml, ["paths", "assets_directory"])
     |> result.unwrap(defaults.paths.assets_directory)
-  let extra_dir =
-    tom.get_string(toml, ["paths", "extra_directory"])
-    |> result.unwrap(defaults.paths.extra_directory)
 
   // Parse mnesia config (optional)
   let mnesia_data_dir = case tom.get_string(toml, ["mnesia", "data_dir"]) {
@@ -316,10 +303,7 @@ fn parse_config(
   let config =
     Config(
       server: ServerConfig(port: server_port, host: server_host),
-      paths: PathsConfig(
-        assets_directory: assets_dir,
-        extra_directory: extra_dir,
-      ),
+      paths: PathsConfig(assets_directory: assets_dir),
       mnesia: MnesiaConfig(data_dir: mnesia_data_dir),
       admin: AdminConfig(token: admin_token),
       contact: ContactConfig(email: contact_email),

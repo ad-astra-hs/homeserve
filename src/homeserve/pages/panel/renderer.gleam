@@ -361,26 +361,24 @@ pub fn build_head(metadata: Meta) {
     [
       html.title([], "> " <> metadata.title),
       html.link([
-        attribute.href(
-          "/assets/misc/" <> int.to_string(metadata.index) <> ".css",
-        ),
+        attribute.href("/assets/" <> int.to_string(metadata.index) <> ".css"),
         attribute.rel("stylesheet"),
       ]),
-      html.script([attribute.src("/assets/misc/default.js")], ""),
-      html.script([attribute.src("/assets/misc/details_open.js")], ""),
+      html.script([attribute.src("/assets/default.js")], ""),
+      html.script([attribute.src("/assets/details_open.js")], ""),
     ],
     list.map(metadata.css, fn(name) {
       html.link([
-        attribute.href("/assets/misc/" <> name <> ".css"),
+        attribute.href("/assets/" <> name <> ".css"),
         attribute.rel("stylesheet"),
       ])
     }),
     list.map(metadata.js, fn(name) {
-      html.script([attribute.src("/assets/misc/" <> name <> ".js")], "")
+      html.script([attribute.src("/assets/" <> name <> ".js")], "")
     }),
     case metadata.media.track {
       Some(_) -> [
-        html.script([attribute.src("/assets/misc/audio_player.js")], ""),
+        html.script([attribute.src("/assets/audio_player.js")], ""),
       ]
       None -> []
     },

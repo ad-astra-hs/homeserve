@@ -5,51 +5,30 @@
 //// Uses ETS for cross-process sharing.
 
 import gleam/dict.{type Dict}
-import gleam/dynamic.{type Dynamic}
-import gleam/erlang
 import gleam/erlang/atom.{type Atom}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 
+import homeserve/ets
 import homeserve/pages/panel/types.{type Meta, type Panel}
 
 // ---- ETS Table Names ----
 
 fn cache_table() -> Atom {
-  atom.create_from_string("homeserve_cache")
+  ets.table_name("homeserve_cache")
 }
 
 fn meta_table() -> Atom {
-  atom.create_from_string("homeserve_meta_cache")
+  ets.table_name("homeserve_meta_cache")
 }
 
 fn panel_cache_key() -> Atom {
-  atom.create_from_string("panel_cache")
+  ets.atom("panel_cache")
 }
 
 fn meta_list_key() -> Atom {
-  atom.create_from_string("meta_list")
+  ets.atom("meta_list")
 }
-
-// ---- ETS Bindings ----
-
-@external(erlang, "ets", "new")
-fn ets_new(name: Atom, options: List(Dynamic)) -> Atom
-
-@external(erlang, "ets", "lookup")
-fn ets_lookup_cache(table: Atom, key: Atom) -> List(#(Atom, Dict(Int, Panel)))
-
-@external(erlang, "ets", "lookup")
-fn ets_lookup_meta(table: Atom, key: Atom) -> List(#(Atom, List(Meta)))
-
-@external(erlang, "ets", "insert")
-fn ets_insert_cache(table: Atom, record: #(Atom, Dict(Int, Panel))) -> Bool
-
-@external(erlang, "ets", "insert")
-fn ets_insert_meta(table: Atom, record: #(Atom, List(Meta))) -> Bool
-
-@external(erlang, "ets", "delete")
-fn ets_delete_key(table: Atom, key: a) -> Bool
 
 // ---- Table Management ----
 
@@ -60,20 +39,7 @@ pub fn init() -> Nil {
 }
 
 fn ensure_table(name: Atom) -> Nil {
-  // ets:new throws badarg if the named table already exists.
-  // Using rescue makes this idempotent and race-condition-safe:
-  // concurrent calls are fine — the second one just gets an ignored error.
-  let _ =
-    erlang.rescue(fn() {
-      ets_new(name, [
-        dynamic.from(atom.create_from_string("set")),
-        dynamic.from(atom.create_from_string("public")),
-        dynamic.from(atom.create_from_string("named_table")),
-        dynamic.from(#(atom.create_from_string("read_concurrency"), True)),
-        dynamic.from(#(atom.create_from_string("write_concurrency"), True)),
-      ])
-    })
-  Nil
+  ets.create_named_table(name, ets.public_set_options_concurrent())
 }
 
 // ---- Panel Cache ----
@@ -99,7 +65,7 @@ pub fn put(index: Int, panel: Panel) -> Nil {
 }
 
 fn get_panel_cache_dict() -> Option(Dict(Int, Panel)) {
-  case ets_lookup_cache(cache_table(), panel_cache_key()) {
+  case ets.lookup(cache_table(), panel_cache_key()) {
     [#(_, cache)] ->
       case dict.size(cache) {
         0 -> None
@@ -110,7 +76,7 @@ fn get_panel_cache_dict() -> Option(Dict(Int, Panel)) {
 }
 
 fn set_panel_cache_dict(cache: Dict(Int, Panel)) -> Nil {
-  ets_insert_cache(cache_table(), #(panel_cache_key(), cache))
+  ets.insert(cache_table(), #(panel_cache_key(), cache))
   Nil
 }
 
@@ -119,7 +85,7 @@ fn set_panel_cache_dict(cache: Dict(Int, Panel)) -> Nil {
 /// Get cached metadata list.
 pub fn get_meta_list() -> Option(List(Meta)) {
   init()
-  case ets_lookup_meta(meta_table(), meta_list_key()) {
+  case ets.lookup(meta_table(), meta_list_key()) {
     [#(_, [])] -> None
     [#(_, metas)] -> Some(metas)
     _ -> None
@@ -129,7 +95,7 @@ pub fn get_meta_list() -> Option(List(Meta)) {
 /// Store metadata list in cache.
 pub fn put_meta_list(metas: List(Meta)) -> Nil {
   init()
-  ets_insert_meta(meta_table(), #(meta_list_key(), metas))
+  ets.insert(meta_table(), #(meta_list_key(), metas))
   Nil
 }
 
@@ -138,8 +104,8 @@ pub fn put_meta_list(metas: List(Meta)) -> Nil {
 /// Clear the entire cache (call after any panel write).
 pub fn clear() -> Nil {
   init()
-  ets_delete_key(cache_table(), panel_cache_key())
-  ets_delete_key(meta_table(), meta_list_key())
+  ets.delete(cache_table(), panel_cache_key())
+  ets.delete(meta_table(), meta_list_key())
   Nil
 }
 

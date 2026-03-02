@@ -18,6 +18,10 @@ import homeserve/mnesia_db
 import homeserve/pages/admin/auth
 import homeserve/pages/admin/forms
 import homeserve/pages/admin/util
+import homeserve/pages/admin/validation.{
+  type ValidationError, FieldTooLong, InvalidCharacters, InvalidUrl,
+  MissingRequiredField,
+}
 import homeserve/pagination
 import homeserve/volunteers.{type Volunteer, Volunteer}
 import wisp.{type Request, type Response}
@@ -47,7 +51,7 @@ pub fn serve_volunteer_admin(req: Request, cfg: Config) -> Response {
 
       // Set CSRF token cookie
       let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-      wisp.set_cookie(resp, req, "csrf_token", csrf_token, wisp.Signed, 3600)
+      auth.set_csrf_cookie(resp, req, csrf_token)
     }
   }
 }
@@ -220,14 +224,7 @@ pub fn serve_edit(req: Request, cfg: Config, volunteer_name: String) -> Response
               ],
             )
           let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-          wisp.set_cookie(
-            resp,
-            req,
-            "csrf_token",
-            csrf_token,
-            wisp.Signed,
-            3600,
-          )
+          auth.set_csrf_cookie(resp, req, csrf_token)
         }
         Error(volunteers.FileNotFound(_)) -> {
           util.render_error_page(
@@ -393,14 +390,7 @@ pub fn handle_delete(
               ],
             )
           let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-          wisp.set_cookie(
-            resp,
-            req,
-            "csrf_token",
-            csrf_token,
-            wisp.Signed,
-            3600,
-          )
+          auth.set_csrf_cookie(resp, req, csrf_token)
         }
         Error(volunteers.FileNotFound(_)) -> {
           util.render_error_page(
@@ -490,13 +480,6 @@ pub fn handle_delete_post(
 }
 
 // ---- Validation ----
-
-/// Validation result type
-pub type ValidationError {
-  FieldTooLong(field: String, max: Int)
-  InvalidCharacters(field: String)
-  MissingRequiredField(field: String)
-}
 
 /// Maximum lengths for form fields
 const max_name_length = 100
@@ -591,6 +574,7 @@ fn format_validation_errors(errors: List(ValidationError)) -> String {
     case err {
       FieldTooLong(field, max) ->
         field <> " is too long (max " <> string.inspect(max) <> " characters)"
+      InvalidUrl(field) -> field <> " contains an invalid URL"
       InvalidCharacters(field) -> field <> " contains invalid characters"
       MissingRequiredField(field) -> field <> " is required"
     }

@@ -237,8 +237,7 @@ pub fn unknown_route_test() {
     ["health"] -> True
     ["hoc"] -> True
     ["hoc", _] -> True
-    ["assets", _] -> True
-    ["assets", "misc", _] -> True
+    ["assets", ..] -> True
     ["favicon.ico"] -> True
     ["discord"] -> True
     ["apply"] -> True

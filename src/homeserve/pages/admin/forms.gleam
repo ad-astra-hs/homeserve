@@ -22,6 +22,7 @@ import lustre/element/html
 
 import homeserve/config.{type Config}
 import homeserve/pages/panel/types.{type Meta, type Panel, Image, Video}
+import homeserve/pagination
 import homeserve/volunteers.{type Volunteer}
 
 pub fn render_form_group(label_text: String, input_element) {
@@ -755,75 +756,26 @@ fn render_volunteer_admin_nav(token: String) {
 
 // ---- Pagination Component ----
 
-/// Renders pagination controls
+/// Renders pagination controls for admin pages
 fn render_pagination(
   token: String,
   current_page: Int,
   total_pages: Int,
   base_path: String,
 ) {
-  case total_pages <= 1 {
-    True -> element.none()
-    False -> {
-      let prev_button = case current_page > 1 {
-        True ->
-          html.a(
-            [
-              attribute.href(
-                "/admin/"
-                <> base_path
-                <> "?token="
-                <> token
-                <> "&page="
-                <> int.to_string(current_page - 1),
-              ),
-              attribute.class("btn btn-secondary"),
-            ],
-            [html.text("← Previous")],
-          )
-        False ->
-          html.span([attribute.class("btn btn-disabled")], [
-            html.text("← Previous"),
-          ])
-      }
-
-      let next_button = case current_page < total_pages {
-        True ->
-          html.a(
-            [
-              attribute.href(
-                "/admin/"
-                <> base_path
-                <> "?token="
-                <> token
-                <> "&page="
-                <> int.to_string(current_page + 1),
-              ),
-              attribute.class("btn btn-secondary"),
-            ],
-            [html.text("Next →")],
-          )
-        False ->
-          html.span([attribute.class("btn btn-disabled")], [
-            html.text("Next →"),
-          ])
-      }
-
-      let page_info =
-        html.span([attribute.class("pagination-info")], [
-          html.text(
-            "Page "
-            <> int.to_string(current_page)
-            <> " of "
-            <> int.to_string(total_pages),
-          ),
-        ])
-
-      html.div([attribute.class("pagination-controls")], [
-        prev_button,
-        page_info,
-        next_button,
-      ])
-    }
+  let build_url = fn(page) {
+    "/admin/"
+    <> base_path
+    <> "?token="
+    <> token
+    <> "&page="
+    <> int.to_string(page)
   }
+  pagination.render_pagination(
+    current_page,
+    total_pages,
+    build_url,
+    build_url,
+    None,
+  )
 }

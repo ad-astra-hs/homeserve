@@ -12,6 +12,9 @@ import homeserve/config
 import homeserve/db
 import homeserve/pages/admin/auth
 import homeserve/pages/admin/util
+import homeserve/pages/admin/validation.{
+  FieldTooLong, InvalidCharacters, InvalidUrl, MissingRequiredField,
+}
 import homeserve/pages/panel/types
 import homeserve/security
 import wisp
@@ -194,7 +197,7 @@ pub fn form_validation_null_byte_in_title_test() {
       let has_invalid_chars =
         list.any(errors, fn(e) {
           case e {
-            util.InvalidCharacters("title") -> True
+            InvalidCharacters("title") -> True
             _ -> False
           }
         })
@@ -220,7 +223,7 @@ pub fn form_validation_null_byte_in_content_test() {
       let has_invalid_chars =
         list.any(errors, fn(e) {
           case e {
-            util.InvalidCharacters("content") -> True
+            InvalidCharacters("content") -> True
             _ -> False
           }
         })
@@ -246,7 +249,7 @@ pub fn form_validation_xss_in_media_url_test() {
       let has_url_error =
         list.any(errors, fn(e) {
           case e {
-            util.InvalidUrl("media_url") -> True
+            InvalidUrl("media_url") -> True
             _ -> False
           }
         })
@@ -273,7 +276,7 @@ pub fn form_validation_very_long_title_test() {
       let has_length_error =
         list.any(errors, fn(e) {
           case e {
-            util.FieldTooLong("title", _) -> True
+            FieldTooLong("title", _) -> True
             _ -> False
           }
         })
@@ -299,7 +302,7 @@ pub fn form_validation_whitespace_only_title_test() {
       let has_required_error =
         list.any(errors, fn(e) {
           case e {
-            util.MissingRequiredField("title") -> True
+            MissingRequiredField("title") -> True
             _ -> False
           }
         })
