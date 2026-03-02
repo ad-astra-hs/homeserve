@@ -12,7 +12,7 @@ import homeserve/base
 pub fn build_privacy_policy(contact_email: String) -> base.Page {
   let head = [html.title([], "Privacy Policy")]
   let css = [
-    css.global(".dead_center", [
+    css.global(".policy-box", [
       css.text_align("justify"),
       css.background("#e0e0e0"),
       css.padding(length.pt(10)),
@@ -20,7 +20,7 @@ pub fn build_privacy_policy(contact_email: String) -> base.Page {
     ]),
   ]
   let body = [
-    html.div([attribute.class("dead_center")], [
+    html.div([attribute.class("policy-box")], [
       html.h1([], [html.text("Privacy Policy")]),
       html.p([], [
         html.text("Last updated: February 2026"),

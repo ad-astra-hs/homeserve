@@ -5,9 +5,6 @@ import gleam/int
 
 import lustre/attribute
 import lustre/element/html
-import sketch/css
-import sketch/css/length
-import sketch/css/transform
 import wisp
 
 import homeserve/base
@@ -25,22 +22,9 @@ pub fn build_error(code: Int, message: String) -> base.Page {
   }
 
   let head = [html.title([], "Error " <> code_str)]
-  let css = [
-    css.global(".dead_center", [
-      css.position("absolute"),
-      css.top(length.percent(50)),
-      css.left(length.percent(50)),
-      css.transform([
-        transform.translate_x(length.percent(-50)),
-        transform.translate_y(length.percent(-50)),
-      ]),
-      css.text_align("justify"),
-      css.background("#e0e0e0"),
-      css.padding(length.pt(10)),
-    ]),
-  ]
+  let css = []
   let body = [
-    html.div([attribute.class("dead_center")], [
+    html.div([attribute.class("dead-center")], [
       html.h1([], [html.text("Error " <> code_str)]),
       html.p([], [html.text(message)]),
       html.h3([], [
