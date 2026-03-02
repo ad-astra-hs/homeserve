@@ -168,7 +168,9 @@ fn get_random_contributor(panels: List(panel.Meta)) -> option.Option(String) {
     [] -> None
     [single] -> Some(single)
     _ -> {
-      let random_index = int.random(list.length(all_contributors) - 1)
+      // Generate random index from 0 to length-1 (inclusive)
+      let length = list.length(all_contributors)
+      let random_index = int.random(length)
       case list.drop(all_contributors, random_index) {
         [] -> None
         [contributor, ..] -> Some(contributor)

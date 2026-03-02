@@ -1,6 +1,7 @@
 /// Asset Serving
 ///
 /// Handles serving of static assets with proper MIME types and caching.
+import gleam/http
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -192,6 +193,3 @@ fn extension_to_mime(extension: String) -> String {
     _ -> "application/octet-stream"
   }
 }
-
-// Required import for http.Get
-import gleam/http

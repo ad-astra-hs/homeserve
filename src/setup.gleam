@@ -3,18 +3,20 @@
 /// Usage: gleam run -m setup [command]
 ///
 /// Commands:
-///   verify    - Verify CouchDB connection (default)
+///   verify    - Verify Mnesia database (default)
 ///   token     - Generate a secure admin token hash
 ///
 /// This script provides setup utilities for Homeserve including
 /// database verification and secure token generation.
+import gleam/bit_array
+import gleam/crypto
 import gleam/int
 import gleam/list
 import gleam/string
 
 import homeserve/config
-import homeserve/couchdb
 import homeserve/db
+import homeserve/mnesia_db
 import homeserve/pages/admin/auth
 import wisp
 
@@ -29,7 +31,7 @@ fn print_usage() {
   wisp.log_info("Usage: gleam run -m setup [command]")
   wisp.log_info("")
   wisp.log_info("Commands:")
-  wisp.log_info("  verify    Verify CouchDB connection (default)")
+  wisp.log_info("  verify    Verify Mnesia database (default)")
   wisp.log_info("  token     Generate a secure admin token hash")
   wisp.log_info("")
   wisp.log_info("Examples:")
@@ -68,7 +70,7 @@ fn erlang_list_to_string(chars: List(Int)) -> String {
   string.from_utf_codepoints(codepoints)
 }
 
-/// Verify CouchDB connection and database setup
+/// Verify Mnesia database setup
 fn verify_database() {
   wisp.log_info("=== Homeserve Database Verification ===")
   wisp.log_info("")
@@ -76,54 +78,48 @@ fn verify_database() {
   // Load configuration
   let cfg = config.load()
 
-  // Create CouchDB config from application config
-  let couch_config = couchdb.config_from_app_config(cfg)
-
-  wisp.log_info(
-    "Connecting to CouchDB at "
-    <> couch_config.host
-    <> ":"
-    <> int.to_string(couch_config.port),
-  )
-  wisp.log_info("Database: " <> couch_config.database)
+  wisp.log_info("Initializing Mnesia database...")
 
   // Initialize and verify database
-  case db.initialize(couch_config) {
+  case db.initialize(cfg.mnesia) {
     Error(err) -> {
       wisp.log_error(
-        "Failed to initialize database: " <> couchdb.error_to_string(err),
-      )
-      wisp.log_error(
-        "Please ensure CouchDB is running on "
-        <> couch_config.host
-        <> ":"
-        <> int.to_string(couch_config.port),
-      )
-      wisp.log_error(
-        "You can start CouchDB with: docker run -d -p 5984:5984 -e COUCHDB_USER=admin -e COUCHDB_PASSWORD=password couchdb:latest",
+        "Failed to initialize database: " <> mnesia_db.error_to_string(err),
       )
       exit(1)
     }
     Ok(_) -> {
       wisp.log_info("✓ Database initialized and verified")
 
-      // Verify database is accessible by testing a simple operation
-      case couchdb.get_all_docs(couch_config) {
-        Ok(docs) -> {
-          let doc_count = list.length(docs)
+      // Verify database is accessible by checking table sizes
+      case mnesia_db.get_table_size(mnesia_db.panel_table) {
+        Ok(panel_count) -> {
           wisp.log_info(
-            "✓ Database accessible - found "
-            <> int.to_string(doc_count)
-            <> " existing documents",
+            "✓ Panels table accessible - found "
+            <> int.to_string(panel_count)
+            <> " panels",
           )
         }
         Error(err) -> {
           wisp.log_warning(
-            "Database initialized but verification failed: "
-            <> couchdb.error_to_string(err),
+            "Database initialized but panel table check failed: "
+            <> mnesia_db.error_to_string(err),
           )
+        }
+      }
+
+      case mnesia_db.get_table_size(mnesia_db.volunteer_table) {
+        Ok(volunteer_count) -> {
+          wisp.log_info(
+            "✓ Volunteers table accessible - found "
+            <> int.to_string(volunteer_count)
+            <> " volunteers",
+          )
+        }
+        Error(err) -> {
           wisp.log_warning(
-            "This may indicate connection issues or permission problems",
+            "Database initialized but volunteer table check failed: "
+            <> mnesia_db.error_to_string(err),
           )
         }
       }
@@ -134,7 +130,7 @@ fn verify_database() {
   wisp.log_info("=== Verification Complete ===")
 }
 
-/// Generate a secure admin token with bcrypt hash
+/// Generate a secure admin token with SHA-256 hash
 fn generate_token() {
   wisp.log_info("=== Secure Admin Token Generator ===")
   wisp.log_info("")
@@ -164,20 +160,9 @@ fn generate_token() {
   wisp.log_info("=== Token Generation Complete ===")
 }
 
-/// Generate a random alphanumeric token of specified length
-fn generate_random_token(length: Int) -> String {
-  let chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-  generate_random_string(length, chars, "")
-}
-
-fn generate_random_string(remaining: Int, chars: String, acc: String) -> String {
-  case remaining {
-    0 -> acc
-    _ -> {
-      let char_index = int.random(string.length(chars))
-      let char = string.slice(chars, char_index, 1)
-      generate_random_string(remaining - 1, chars, acc <> char)
-    }
-  }
+/// Generate a cryptographically secure random token of specified byte length,
+/// returned as a URL-safe base64 string (no padding).
+fn generate_random_token(bytes: Int) -> String {
+  crypto.strong_random_bytes(bytes)
+  |> bit_array.base64_url_encode(False)
 }

@@ -386,7 +386,13 @@ pub fn render_edit_form(token: String, csrf_token: String, panel: Panel) {
   ])
 }
 
-pub fn render_panel_list(token: String, panels: List(Meta)) {
+pub fn render_panel_list(
+  token: String,
+  panels: List(Meta),
+  current_page: Int,
+  total_pages: Int,
+  total_items: Int,
+) {
   let sorted_panels =
     list.sort(panels, fn(a, b) { int.compare(a.index, b.index) })
 
@@ -394,6 +400,15 @@ pub fn render_panel_list(token: String, panels: List(Meta)) {
     render_admin_nav(token),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("ALL PANELS"),
+    ]),
+    html.p([attribute.class("text-center text-muted")], [
+      html.text(
+        "Showing "
+        <> int.to_string(list.length(sorted_panels))
+        <> " of "
+        <> int.to_string(total_items)
+        <> " panels",
+      ),
     ]),
     html.table([attribute.class("table")], [
       html.thead([], [
@@ -453,6 +468,7 @@ pub fn render_panel_list(token: String, panels: List(Meta)) {
         }),
       ),
     ]),
+    render_pagination(token, current_page, total_pages, "list"),
   ])
 }
 
@@ -563,8 +579,14 @@ pub fn render_volunteer_edit_form(
   ])
 }
 
-/// Renders the volunteer list
-pub fn render_volunteer_list(token: String, volunteers: List(Volunteer)) {
+/// Renders the volunteer list with pagination
+pub fn render_volunteer_list(
+  token: String,
+  volunteers: List(Volunteer),
+  current_page: Int,
+  total_pages: Int,
+  total_items: Int,
+) {
   let sorted_volunteers =
     list.sort(volunteers, fn(a, b) { string.compare(a.name, b.name) })
 
@@ -572,6 +594,15 @@ pub fn render_volunteer_list(token: String, volunteers: List(Volunteer)) {
     render_volunteer_admin_nav(token),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("ALL VOLUNTEERS"),
+    ]),
+    html.p([attribute.class("text-center text-muted")], [
+      html.text(
+        "Showing "
+        <> int.to_string(list.length(sorted_volunteers))
+        <> " of "
+        <> int.to_string(total_items)
+        <> " volunteers",
+      ),
     ]),
     html.table([attribute.class("table")], [
       html.thead([], [
@@ -624,6 +655,7 @@ pub fn render_volunteer_list(token: String, volunteers: List(Volunteer)) {
         }),
       ),
     ]),
+    render_pagination(token, current_page, total_pages, "volunteers/list"),
   ])
 }
 
@@ -719,4 +751,79 @@ fn render_volunteer_admin_nav(token: String) {
       [html.text("PANELS")],
     ),
   ])
+}
+
+// ---- Pagination Component ----
+
+/// Renders pagination controls
+fn render_pagination(
+  token: String,
+  current_page: Int,
+  total_pages: Int,
+  base_path: String,
+) {
+  case total_pages <= 1 {
+    True -> element.none()
+    False -> {
+      let prev_button = case current_page > 1 {
+        True ->
+          html.a(
+            [
+              attribute.href(
+                "/admin/"
+                <> base_path
+                <> "?token="
+                <> token
+                <> "&page="
+                <> int.to_string(current_page - 1),
+              ),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("← Previous")],
+          )
+        False ->
+          html.span([attribute.class("btn btn-disabled")], [
+            html.text("← Previous"),
+          ])
+      }
+
+      let next_button = case current_page < total_pages {
+        True ->
+          html.a(
+            [
+              attribute.href(
+                "/admin/"
+                <> base_path
+                <> "?token="
+                <> token
+                <> "&page="
+                <> int.to_string(current_page + 1),
+              ),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("Next →")],
+          )
+        False ->
+          html.span([attribute.class("btn btn-disabled")], [
+            html.text("Next →"),
+          ])
+      }
+
+      let page_info =
+        html.span([attribute.class("pagination-info")], [
+          html.text(
+            "Page "
+            <> int.to_string(current_page)
+            <> " of "
+            <> int.to_string(total_pages),
+          ),
+        ])
+
+      html.div([attribute.class("pagination-controls")], [
+        prev_button,
+        page_info,
+        next_button,
+      ])
+    }
+  }
 }

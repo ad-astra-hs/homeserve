@@ -1,38 +1,19 @@
 import gleeunit/should
+import homeserve/pages/panel/renderer
 
 // ---- Track URL Parsing Tests ----
 //
 // Tests for the track field URL parsing functionality.
-// The track field can accept any URL, and the display name
-// should be extracted from the final path component.
+// Uses the shared renderer utilities.
 
-/// Extract filename from URL - same logic as in renderer
+/// Extract filename from URL - wrapper for renderer function
 fn extract_filename_from_url(url: String) -> String {
-  url
-  |> string.split("/")
-  |> list.last
-  |> result.unwrap(url)
+  renderer.extract_filename_from_url(url)
 }
 
-/// Extract display name from track URL
+/// Extract display name from track URL - wrapper for renderer function
 fn extract_track_display_name(track_url: String) -> String {
-  let filename = extract_filename_from_url(track_url)
-
-  // Split by "?" first to remove query params, then by "." for extension
-  let without_query = case string.split(filename, "?") {
-    [base, ..] -> base
-    [] -> filename
-  }
-
-  // Split by "." and take everything before the last extension
-  case string.split(without_query, ".") {
-    [name] -> name
-    parts -> {
-      // Drop the last part (extension), join the rest
-      let name_parts = list.take(parts, list.length(parts) - 1)
-      string.join(name_parts, ".")
-    }
-  }
+  renderer.extract_track_display_name(track_url)
 }
 
 // ---- Filename Extraction Tests ----
@@ -98,8 +79,4 @@ pub fn display_name_wav_test() {
   extract_track_display_name("/assets/music/song.wav")
   |> should.equal("song")
 }
-
-// ---- Import helpers ----
-import gleam/list
-import gleam/result
-import gleam/string
+// Test complete

@@ -69,16 +69,13 @@ Edit `homeserve.toml` with your settings:
 port = 8000
 host = "0.0.0.0"
 
-[couchdb]
-host = "couchdb"
-port = 5984
-database = "homeserve_panels"
-username = "admin"
-password = "your-secure-password"
+# Optional: Custom data directory for Mnesia
+# [mnesia]
+# data_dir = "/var/lib/homeserve/mnesia"
 
 [admin]
 # Generate with: gleam run -m setup token
-token = "$2b$10$..."
+token = "sha256:..."
 
 [contact]
 email = "admin@example.com"
@@ -90,21 +87,17 @@ email = "admin@example.com"
 version: '3'
 
 services:
-  couchdb:
-    image: couchdb:latest
-    environment:
-      COUCHDB_USER: admin
-      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
-    volumes:
-      - couchdb_data:/opt/couchdb/data
-
   homeserve:
     build: .
+    volumes:
+      # Persist Mnesia data
+      - mnesia_data:/app/data
+      # Mount config
+      - ./homeserve.toml:/app/homeserve.toml:ro
+      # Mount static assets
+      - ./priv/static:/app/priv/static:ro
     environment:
-      COUCHDB_HOST: couchdb
-      COUCHDB_PASSWORD: ${COUCHDB_PASSWORD}
-    depends_on:
-      - couchdb
+      - MNESIA_DATA_DIR=/app/data
 
   caddy:
     image: caddy:builder
@@ -115,6 +108,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
+      - ./priv/static:/var/www/static:ro
     depends_on:
       - homeserve
     # Build with rate_limit module
@@ -123,20 +117,12 @@ services:
              caddy run --config /etc/caddy/Caddyfile"
 
 volumes:
-  couchdb_data:
+  mnesia_data:
   caddy_data:
   caddy_config:
 ```
 
-### 4. Configure Environment
-
-Create a `.env` file:
-
-```bash
-COUCHDB_PASSWORD=your-secure-password
-```
-
-### 5. Deploy
+### 4. Deploy
 
 ```bash
 # Build and start all services
@@ -170,9 +156,9 @@ docker-compose restart homeserve
 ## Security Checklist
 
 - [ ] Change default admin token
-- [ ] Set strong CouchDB password
-- [ ] Use bcrypt hashed token in production
+- [ ] Use SHA-256 hashed token in production
 - [ ] Keep Caddy HTTPS automatic
+- [ ] Ensure Mnesia data directory has proper permissions
 
 ## Useful Commands
 
@@ -190,6 +176,108 @@ docker-compose up -d --build
 # Stop everything
 docker-compose down
 
-# Backup CouchDB
-docker exec homeserve-couchdb-1 tar czf - /opt/couchdb/data > backup.tar.gz
+# Backup Mnesia data
+docker exec homeserve-homeserve-1 tar czf - /app/data > backup.tar.gz
+
+# Restore Mnesia data
+docker exec -i homeserve-homeserve-1 tar xzf - -C /app/data < backup.tar.gz
 ```
+
+## Mnesia Database
+
+Homeserve uses Mnesia, Erlang/BEAM's built-in distributed database. No external database is required!
+
+### Data Storage
+
+- By default, Mnesia stores data in the Erlang Mnesia directory
+- For Docker deployments, a volume is mounted at `/app/data`
+- You can specify a custom directory in `homeserve.toml`:
+
+```toml
+[mnesia]
+data_dir = "/var/lib/homeserve/mnesia"
+```
+
+### Understanding Storage Modes
+
+Mnesia operates in two storage modes:
+
+1. **`disc_copies`** (Persistent) - Data survives restarts
+   - Enabled when running with Erlang node name: `ERL_FLAGS="-sname homeserve"`
+   - Data stored in Mnesia directory (configurable via `data_dir`)
+   
+2. **`ram_copies`** (In-Memory) - Data lost on restart
+   - Used when running without node name: `gleam run`
+   - Useful for development and testing
+
+### Backup and Restore
+
+#### Method 1: File System Backup (Recommended)
+
+When using persistent storage (`disc_copies`), Mnesia stores data in regular files:
+
+```bash
+# Find your Mnesia data directory
+# Default: ./Mnesia.homeserve@hostname/ in project root
+# Or: configured data_dir from homeserve.toml
+
+# Backup while running (Mnesia supports hot backups)
+tar czf homeserve-backup-$(date +%Y%m%d).tar.gz Mnesia.homeserve@*/
+
+# Restore (stop application first)
+# 1. Stop homeserve
+# 2. Extract backup
+tar xzf homeserve-backup-20240101.tar.gz
+# 3. Start homeserve
+```
+
+#### Method 2: Docker Volume Backup
+
+```bash
+# Backup
+docker run --rm -v homeserve_mnesia_data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/mnesia-backup.tar.gz -C /data .
+
+# Restore (with homeserve stopped)
+docker run --rm -v homeserve_mnesia_data:/data -v $(pwd):/backup alpine \
+  sh -c "rm -rf /data/* && tar xzf /backup/mnesia-backup.tar.gz -C /data"
+```
+
+#### Method 3: Mnesia Native Backup (Advanced)
+
+For consistent backups during heavy write loads:
+
+```erlang
+%% In Erlang shell (gleam shell)
+mnesia:backup("/path/to/backup.bup").
+
+%% To restore:
+mnesia:restore("/path/to/backup.bup", [{default, recreate_tables}]).
+```
+
+### Backup Strategy Recommendations
+
+| Environment | Frequency | Method |
+|-------------|-----------|--------|
+| Production | Daily + before updates | Docker volume or filesystem backup |
+| Staging | Weekly | Filesystem backup |
+| Development | As needed | None (use ram_copies) |
+
+### Troubleshooting
+
+**Issue: Data not persisting after restart**
+- Check you're running with node name: `ERL_FLAGS="-sname homeserve"`
+- Verify data directory permissions
+- Check logs for schema creation messages
+
+**Issue: Schema errors when switching node names**
+- Mnesia schema is tied to the node name
+- When changing from `nonode@nohost` to `homeserve@hostname`, schema is recreated automatically
+- Data from `ram_copies` is lost when switching to `disc_copies`
+
+**Issue: Backup restoration fails**
+- Ensure homeserve is stopped during restore
+- Verify backup file integrity: `tar tzf backup.tar.gz`
+- Check ownership/permissions of restored files
+
+

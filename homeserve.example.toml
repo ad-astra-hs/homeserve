@@ -31,42 +31,21 @@ assets_directory = "./priv/static/assets"
 extra_directory = "./priv/static/extra"
 
 # =============================================================================
-# COUCHDB CONFIGURATION (REQUIRED)
+# MNESIA CONFIGURATION (OPTIONAL)
 # =============================================================================
 #
-# Homeserve requires CouchDB to store panel documents.
-# Without CouchDB, the application will not function properly.
+# Homeserve uses Mnesia (Erlang/BEAM's built-in database) to store panel
+# documents and volunteer information.
 #
 # IMPORTANT:
-#   - Ensure CouchDB is running BEFORE starting Homeserve
-#   - The database will be created automatically if it doesn't exist
-#   - Run `gleam run -m setup verify` to verify the connection
-#   - Run `gleam run -m setup token` to generate a secure admin token
+#   - Mnesia is built into the Erlang/BEAM runtime - no external database needed!
+#   - Data is stored locally in the Mnesia directory
+#   - By default, data is stored in the Erlang Mnesia directory
 
-[couchdb]
-# CouchDB connection settings.
-#
-# Quick start with Docker:
-#   docker run -d -p 5984:5984 \
-#     -e COUCHDB_USER=admin \
-#     -e COUCHDB_PASSWORD=password \
-#     couchdb:latest
-
-# Hostname or IP address of the CouchDB server.
-# Use "127.0.0.1" instead of "localhost" to avoid IPv6 connection issues.
-host = "127.0.0.1"
-
-# CouchDB port (default: 5984)
-port = 5984
-
-# Database name for storing panel documents.
-# The database will be created automatically if it doesn't exist.
-database = "homeserve_panels"
-
-# Authentication credentials (optional but recommended)
-# Leave as empty strings if CouchDB is running without authentication
-username = "admin"
-password = "password"
+[mnesia]
+# Optional: Custom data directory for Mnesia storage.
+# If not set, uses Erlang's default Mnesia directory.
+# data_dir = "./data/mnesia"
 
 # =============================================================================
 # ADMIN PANEL CONFIGURATION
@@ -82,10 +61,10 @@ password = "password"
 #
 # Access the admin panel with: /admin?token=<your-token>
 #
-# NOTE: For enhanced security, you can use a bcrypt hashed token.
+# NOTE: For enhanced security, you can use a SHA-256 hashed token.
 # The token can be either:
 #   - Plaintext (for development): token = "my-secret-token"
-#   - Bcrypt hash (for production): token = "$2b$10$..."
+#   - SHA-256 hash (for production): token = "sha256:<salt>:<hash>"
 #
 # When using a hashed token, users still enter the plaintext token,
 # but the config only stores the hash.
@@ -99,3 +78,13 @@ token = "changeme"
 # Email address displayed on the privacy policy page for privacy concerns
 # and general contact. Update this to match your deployment.
 email = "admin@example.com"
+
+# =============================================================================
+# LOGGING CONFIGURATION
+# =============================================================================
+
+[logging]
+# Log level for the application
+# Valid values: "debug", "info", "warning", "error"
+# Default: "info"
+level = "info"

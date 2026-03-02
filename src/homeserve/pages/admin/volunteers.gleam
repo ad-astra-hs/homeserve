@@ -1,9 +1,6 @@
 //// Admin Panel for Managing Volunteers
 ////
-//// Provides a web interface for managing volunteers stored in CouchDB.
-//// Uses the admin/* modules for authentication, forms, and utilities.
-//// Public API
-//// Helper Functions
+//// Provides a web interface for managing volunteers stored in Mnesia.
 
 import gleam/http
 import gleam/list
@@ -15,13 +12,22 @@ import lustre/element/html
 
 import homeserve/base
 import homeserve/config.{type Config}
-import homeserve/couchdb
 import homeserve/db
+import homeserve/logging
+import homeserve/mnesia_db
 import homeserve/pages/admin/auth
 import homeserve/pages/admin/forms
 import homeserve/pages/admin/util
+import homeserve/pagination
 import homeserve/volunteers.{type Volunteer, Volunteer}
 import wisp.{type Request, type Response}
+
+// ---- Constants ----
+
+/// Number of volunteers to display per page in the list view
+const volunteers_per_page = 10
+
+// ---- Public API ----
 
 /// Serve the volunteer admin page (GET)
 pub fn serve_volunteer_admin(req: Request, cfg: Config) -> Response {
@@ -41,17 +47,13 @@ pub fn serve_volunteer_admin(req: Request, cfg: Config) -> Response {
 
       // Set CSRF token cookie
       let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-      wisp.set_cookie(resp, req, "csrf_token", csrf_token, wisp.PlainText, 3600)
+      wisp.set_cookie(resp, req, "csrf_token", csrf_token, wisp.Signed, 3600)
     }
   }
 }
 
 /// Handle volunteer creation (POST)
-pub fn handle_create(
-  req: Request,
-  couch_config: couchdb.CouchConfig,
-  cfg: Config,
-) -> Response {
+pub fn handle_create(req: Request, cfg: Config) -> Response {
   use <- wisp.require_method(req, http.Post)
 
   case auth.is_authenticated(req, cfg) {
@@ -81,12 +83,11 @@ pub fn handle_create(
               )
             }
             Ok(volunteer) -> {
-              case db.save_volunteer(couch_config, volunteer) {
+              case db.save_volunteer(volunteer) {
                 Ok(_) -> {
+                  logging.log_volunteer("created", volunteer.name)
                   util.render_success_page(
-                    "Volunteer \""
-                      <> volunteer.name
-                      <> "\" created successfully!",
+                    "Volunteer " <> volunteer.name <> " created successfully!",
                     [
                       #(
                         "/admin/volunteers?token=" <> token,
@@ -101,8 +102,16 @@ pub fn handle_create(
                   )
                 }
                 Error(err) -> {
+                  logging.error_ctx(
+                    "ADMIN",
+                    "Failed to create volunteer "
+                      <> volunteer.name
+                      <> ": "
+                      <> mnesia_db.error_to_string(err),
+                  )
                   util.render_error_page(
-                    "Failed to save volunteer: " <> couchdb.error_to_string(err),
+                    "Failed to save volunteer: "
+                      <> mnesia_db.error_to_string(err),
                     [
                       #(
                         "/admin/volunteers?token=" <> token,
@@ -121,31 +130,64 @@ pub fn handle_create(
   }
 }
 
-/// Serve the volunteer list page
-pub fn serve_list(
-  req: Request,
-  couch_config: couchdb.CouchConfig,
-  cfg: Config,
-) -> Response {
+/// Serve the volunteer list page with pagination
+pub fn serve_list(req: Request, cfg: Config) -> Response {
   use <- wisp.require_method(req, http.Get)
 
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
       let token = auth.get_token_string(req)
-      case db.get_all_volunteers(couch_config) {
-        Ok(volunteers) -> {
+
+      // Parse pagination parameters
+      let query_params = wisp.get_query(req)
+      let page = pagination.parse_page_param(query_params)
+
+      case db.get_all_volunteers() {
+        Ok(all_volunteers) -> {
+          let sorted_volunteers =
+            all_volunteers
+            |> list.sort(fn(a, b) { string.compare(a.name, b.name) })
+
+          let total_volunteers = list.length(sorted_volunteers)
+          let total_pages =
+            pagination.calculate_total_pages(
+              total_volunteers,
+              volunteers_per_page,
+            )
+          let current_page = pagination.clamp_page(page, total_pages)
+
+          // Get paginated subset
+          let paginated_volunteers =
+            pagination.get_page(
+              sorted_volunteers,
+              current_page,
+              volunteers_per_page,
+            )
+
           let page =
             base.Page(
               head: [html.title([], "Admin - Volunteer List | Homeserve")],
               css: [],
-              body: [forms.render_volunteer_list(token, volunteers)],
+              body: [
+                forms.render_volunteer_list(
+                  token,
+                  paginated_volunteers,
+                  current_page,
+                  total_pages,
+                  total_volunteers,
+                ),
+              ],
             )
           wisp.ok() |> wisp.html_body(base.render_page(page))
         }
         Error(err) -> {
+          logging.error_ctx(
+            "ADMIN",
+            "Failed to load volunteers: " <> mnesia_db.error_to_string(err),
+          )
           util.render_error_page(
-            "Failed to load volunteers: " <> couchdb.error_to_string(err),
+            "Failed to load volunteers: " <> mnesia_db.error_to_string(err),
             [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
             500,
           )
@@ -156,12 +198,7 @@ pub fn serve_list(
 }
 
 /// Serve the edit form for an existing volunteer
-pub fn serve_edit(
-  req: Request,
-  couch_config: couchdb.CouchConfig,
-  cfg: Config,
-  volunteer_name: String,
-) -> Response {
+pub fn serve_edit(req: Request, cfg: Config, volunteer_name: String) -> Response {
   use <- wisp.require_method(req, http.Get)
 
   case auth.is_authenticated(req, cfg) {
@@ -171,7 +208,7 @@ pub fn serve_edit(
       let decoded_name =
         uri.percent_decode(volunteer_name) |> result.unwrap(volunteer_name)
 
-      case db.load_volunteer(couch_config, decoded_name) {
+      case db.load_volunteer(decoded_name) {
         Ok(volunteer) -> {
           let csrf_token = auth.generate_csrf_token()
           let page =
@@ -188,7 +225,7 @@ pub fn serve_edit(
             req,
             "csrf_token",
             csrf_token,
-            wisp.PlainText,
+            wisp.Signed,
             3600,
           )
         }
@@ -200,6 +237,10 @@ pub fn serve_edit(
           )
         }
         Error(_) -> {
+          logging.error_ctx(
+            "ADMIN",
+            "Failed to load volunteer \"" <> decoded_name <> "\"",
+          )
           util.render_error_page(
             "Failed to load volunteer \"" <> decoded_name <> "\"",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
@@ -212,11 +253,7 @@ pub fn serve_edit(
 }
 
 /// Handle volunteer update (POST)
-pub fn handle_update(
-  req: Request,
-  couch_config: couchdb.CouchConfig,
-  cfg: Config,
-) -> Response {
+pub fn handle_update(req: Request, cfg: Config) -> Response {
   use <- wisp.require_method(req, http.Post)
 
   case auth.is_authenticated(req, cfg) {
@@ -253,25 +290,23 @@ pub fn handle_update(
               let result = case name_changed {
                 True -> {
                   // Delete old and save new
-                  case db.delete_volunteer(couch_config, original_name) {
-                    Ok(_) -> db.save_volunteer(couch_config, volunteer)
-                    Error(couchdb.NotFound(_)) ->
-                      db.save_volunteer(couch_config, volunteer)
+                  case db.delete_volunteer(original_name) {
+                    Ok(_) -> db.save_volunteer(volunteer)
+                    Error(mnesia_db.NotFound(_)) -> db.save_volunteer(volunteer)
                     Error(err) -> Error(err)
                   }
                 }
                 False -> {
                   // Just update
-                  db.update_volunteer(couch_config, volunteer)
+                  db.update_volunteer(volunteer)
                 }
               }
 
               case result {
                 Ok(_) -> {
+                  logging.log_volunteer("updated", volunteer.name)
                   util.render_success_page(
-                    "Volunteer \""
-                      <> volunteer.name
-                      <> "\" updated successfully!",
+                    "Volunteer " <> volunteer.name <> " updated successfully!",
                     [
                       #(
                         "/admin/volunteers/list?token=" <> token,
@@ -285,7 +320,7 @@ pub fn handle_update(
                     200,
                   )
                 }
-                Error(couchdb.NotFound(_)) -> {
+                Error(mnesia_db.NotFound(_)) -> {
                   util.render_error_page(
                     "Volunteer \"" <> volunteer.name <> "\" not found.",
                     [
@@ -298,9 +333,16 @@ pub fn handle_update(
                   )
                 }
                 Error(err) -> {
+                  logging.error_ctx(
+                    "ADMIN",
+                    "Failed to update volunteer \""
+                      <> volunteer.name
+                      <> "\": "
+                      <> mnesia_db.error_to_string(err),
+                  )
                   util.render_error_page(
                     "Failed to update volunteer: "
-                      <> couchdb.error_to_string(err),
+                      <> mnesia_db.error_to_string(err),
                     [
                       #(
                         "/admin/volunteers/list?token=" <> token,
@@ -322,7 +364,6 @@ pub fn handle_update(
 /// Handle delete confirmation (GET)
 pub fn handle_delete(
   req: Request,
-  couch_config: couchdb.CouchConfig,
   cfg: Config,
   volunteer_name: String,
 ) -> Response {
@@ -336,7 +377,7 @@ pub fn handle_delete(
         uri.percent_decode(volunteer_name) |> result.unwrap(volunteer_name)
 
       // Check if volunteer exists
-      case db.load_volunteer(couch_config, decoded_name) {
+      case db.load_volunteer(decoded_name) {
         Ok(_) -> {
           let csrf_token = auth.generate_csrf_token()
           let page =
@@ -357,7 +398,7 @@ pub fn handle_delete(
             req,
             "csrf_token",
             csrf_token,
-            wisp.PlainText,
+            wisp.Signed,
             3600,
           )
         }
@@ -369,6 +410,10 @@ pub fn handle_delete(
           )
         }
         Error(_) -> {
+          logging.error_ctx(
+            "ADMIN",
+            "Failed to load volunteer \"" <> decoded_name <> "\"",
+          )
           util.render_error_page(
             "Failed to load volunteer \"" <> decoded_name <> "\"",
             [#("/admin/volunteers/list?token=" <> token, "Back to List")],
@@ -383,7 +428,6 @@ pub fn handle_delete(
 /// Handle volunteer deletion (POST)
 pub fn handle_delete_post(
   req: Request,
-  couch_config: couchdb.CouchConfig,
   cfg: Config,
   volunteer_name: String,
 ) -> Response {
@@ -408,15 +452,16 @@ pub fn handle_delete_post(
           )
         }
         True -> {
-          case db.delete_volunteer(couch_config, decoded_name) {
+          case db.delete_volunteer(decoded_name) {
             Ok(_) -> {
+              logging.log_volunteer("deleted", decoded_name)
               util.render_success_page(
                 "Volunteer \"" <> decoded_name <> "\" deleted successfully.",
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
                 200,
               )
             }
-            Error(couchdb.NotFound(_)) -> {
+            Error(mnesia_db.NotFound(_)) -> {
               util.render_error_page(
                 "Volunteer \"" <> decoded_name <> "\" not found.",
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
@@ -424,8 +469,15 @@ pub fn handle_delete_post(
               )
             }
             Error(err) -> {
+              logging.error_ctx(
+                "ADMIN",
+                "Failed to delete volunteer \""
+                  <> decoded_name
+                  <> "\": "
+                  <> mnesia_db.error_to_string(err),
+              )
               util.render_error_page(
-                "Failed to delete volunteer: " <> couchdb.error_to_string(err),
+                "Failed to delete volunteer: " <> mnesia_db.error_to_string(err),
                 [#("/admin/volunteers/list?token=" <> token, "Back to List")],
                 500,
               )
@@ -436,6 +488,8 @@ pub fn handle_delete_post(
     }
   }
 }
+
+// ---- Validation ----
 
 /// Validation result type
 pub type ValidationError {
@@ -450,22 +504,6 @@ const max_name_length = 100
 const max_bio_length = 2000
 
 const max_url_length = 1000
-
-/// Get form field value or empty string
-fn get_form_field(body: wisp.FormData, name: String) -> String {
-  case list.key_find(body.values, name) {
-    Ok(value) -> value
-    Error(_) -> ""
-  }
-}
-
-/// Parse comma-separated list
-fn parse_list(value: String) -> List(String) {
-  value
-  |> string.split(",")
-  |> list.map(string.trim)
-  |> list.filter(fn(s) { s != "" })
-}
 
 /// Validates a name field
 fn validate_name(name: String) -> Result(String, ValidationError) {
@@ -515,8 +553,8 @@ fn build_volunteer_from_form(
   body: wisp.FormData,
 ) -> Result(Volunteer, List(ValidationError)) {
   // Validate required fields
-  let name_result = validate_name(get_form_field(body, "name"))
-  let bio_result = validate_bio(get_form_field(body, "bio"))
+  let name_result = validate_name(util.get_form_field(body, "name"))
+  let bio_result = validate_bio(util.get_form_field(body, "bio"))
 
   // Collect all errors
   let errors = case name_result {
@@ -531,11 +569,14 @@ fn build_volunteer_from_form(
   case errors {
     [] -> {
       // All validations passed, build the volunteer
-      let assert Ok(name) = name_result
-      let assert Ok(bio) = bio_result
+      // Use unwrap with defaults - safe because we verified no errors above
+      let name = result.unwrap(name_result, "")
+      let bio = result.unwrap(bio_result, "")
 
       let social_links =
-        validate_social_links(parse_list(get_form_field(body, "social_links")))
+        validate_social_links(
+          util.parse_list(util.get_form_field(body, "social_links")),
+        )
 
       Ok(Volunteer(name:, social_links:, bio:))
     }

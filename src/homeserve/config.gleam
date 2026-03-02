@@ -3,7 +3,7 @@
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{type Option, Some}
+import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/string
 import simplifile
@@ -17,9 +17,18 @@ pub type Config {
   Config(
     server: ServerConfig,
     paths: PathsConfig,
-    couchdb: CouchdbConfig,
+    mnesia: MnesiaConfig,
     admin: AdminConfig,
     contact: ContactConfig,
+    logging: LoggingConfig,
+  )
+}
+
+/// Logging configuration.
+pub type LoggingConfig {
+  LoggingConfig(
+    /// Log level: "debug", "info", "warning", "error"
+    level: String,
   )
 }
 
@@ -39,14 +48,11 @@ pub type AdminConfig {
   )
 }
 
-/// CouchDB configuration.
-pub type CouchdbConfig {
-  CouchdbConfig(
-    host: String,
-    port: Int,
-    database: String,
-    username: Option(String),
-    password: Option(String),
+/// Mnesia configuration.
+pub type MnesiaConfig {
+  MnesiaConfig(
+    /// Optional data directory for Mnesia (uses Erlang default if not set)
+    data_dir: Option(String),
   )
 }
 
@@ -80,19 +86,11 @@ const default_assets_directory = "./priv/static/assets"
 
 const default_extra_directory = "./priv/static/extra"
 
-const default_couchdb_host = "127.0.0.1"
-
-const default_couchdb_port = 5984
-
-const default_couchdb_database = "homeserve_panels"
-
-const default_couchdb_username = "admin"
-
-const default_couchdb_password = "password"
-
 const default_admin_token = "changeme"
 
 const default_contact_email = "admin@example.com"
+
+const default_log_level = "info"
 
 // ---- Public API ----
 
@@ -158,15 +156,10 @@ pub fn default_config() -> Config {
       assets_directory: default_assets_directory,
       extra_directory: default_extra_directory,
     ),
-    couchdb: CouchdbConfig(
-      host: default_couchdb_host,
-      port: default_couchdb_port,
-      database: default_couchdb_database,
-      username: Some(default_couchdb_username),
-      password: Some(default_couchdb_password),
-    ),
+    mnesia: MnesiaConfig(data_dir: None),
     admin: AdminConfig(token: default_admin_token),
     contact: ContactConfig(email: default_contact_email),
+    logging: LoggingConfig(level: default_log_level),
   )
 }
 
@@ -247,25 +240,6 @@ pub fn validate_config(config: Config) -> List(ValidationError) {
     False -> errors
   }
 
-  // Validate CouchDB config
-  let errors = case is_valid_port(config.couchdb.port) {
-    True -> errors
-    False -> [
-      InvalidPort("couchdb.port", config.couchdb.port, 1, 65_535),
-      ..errors
-    ]
-  }
-
-  let errors = case string.is_empty(config.couchdb.database) {
-    True -> [InvalidNonEmptyString("couchdb.database"), ..errors]
-    False -> errors
-  }
-
-  let errors = case string.is_empty(config.couchdb.host) {
-    True -> [InvalidNonEmptyString("couchdb.host"), ..errors]
-    False -> errors
-  }
-
   // Validate admin config
   let errors = case string.is_empty(config.admin.token) {
     True -> [InvalidNonEmptyString("admin.token"), ..errors]
@@ -318,22 +292,11 @@ fn parse_config(
     tom.get_string(toml, ["paths", "extra_directory"])
     |> result.unwrap(defaults.paths.extra_directory)
 
-  // Parse couchdb config
-  let couchdb_host =
-    tom.get_string(toml, ["couchdb", "host"])
-    |> result.unwrap(defaults.couchdb.host)
-  let couchdb_port =
-    tom.get_int(toml, ["couchdb", "port"])
-    |> result.unwrap(defaults.couchdb.port)
-  let couchdb_database =
-    tom.get_string(toml, ["couchdb", "database"])
-    |> result.unwrap(defaults.couchdb.database)
-  let couchdb_username =
-    tom.get_string(toml, ["couchdb", "username"])
-    |> result.unwrap(default_couchdb_username)
-  let couchdb_password =
-    tom.get_string(toml, ["couchdb", "password"])
-    |> result.unwrap(default_couchdb_password)
+  // Parse mnesia config (optional)
+  let mnesia_data_dir = case tom.get_string(toml, ["mnesia", "data_dir"]) {
+    Ok(dir) if dir != "" -> Some(dir)
+    _ -> None
+  }
 
   // Parse admin config
   let admin_token =
@@ -345,6 +308,11 @@ fn parse_config(
     tom.get_string(toml, ["contact", "email"])
     |> result.unwrap(default_contact_email)
 
+  // Parse logging config
+  let log_level =
+    tom.get_string(toml, ["logging", "level"])
+    |> result.unwrap(default_log_level)
+
   let config =
     Config(
       server: ServerConfig(port: server_port, host: server_host),
@@ -352,15 +320,10 @@ fn parse_config(
         assets_directory: assets_dir,
         extra_directory: extra_dir,
       ),
-      couchdb: CouchdbConfig(
-        host: couchdb_host,
-        port: couchdb_port,
-        database: couchdb_database,
-        username: Some(couchdb_username),
-        password: Some(couchdb_password),
-      ),
+      mnesia: MnesiaConfig(data_dir: mnesia_data_dir),
       admin: AdminConfig(token: admin_token),
       contact: ContactConfig(email: contact_email),
+      logging: LoggingConfig(level: log_level),
     )
 
   // Validate the parsed configuration
@@ -399,11 +362,6 @@ fn log_config(config: Config) -> Nil {
     <> config.server.host
     <> ":"
     <> int.to_string(config.server.port)
-    <> ", couchdb="
-    <> config.couchdb.host
-    <> ":"
-    <> int.to_string(config.couchdb.port)
-    <> "/"
-    <> config.couchdb.database,
+    <> ", mnesia=local",
   )
 }

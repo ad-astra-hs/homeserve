@@ -1,6 +1,6 @@
 //// Volunteer Types
 ////
-//// Volunteer data is stored in CouchDB and managed through the Admin interface.
+//// Volunteer data is stored in Mnesia and managed through the Admin interface.
 //// This module provides the Volunteer type and related error types.
 
 /// Volunteer information structure.

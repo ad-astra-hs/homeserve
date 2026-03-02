@@ -1,7 +1,7 @@
 //// Database Layer for Panels and Volunteers
 ////
-//// High-level database operations for panels and volunteers using CouchDB.
-//// Converts between CouchDB documents and Gleam types.
+//// High-level database operations for panels and volunteers using Mnesia.
+//// Converts between Mnesia records and Gleam types.
 
 import gleam/dict.{type Dict}
 import gleam/dynamic.{type Dynamic}
@@ -9,32 +9,17 @@ import gleam/dynamic/decode
 import gleam/int
 import gleam/json.{type Json}
 import gleam/list
-import gleam/option.{type Option, None, Some}
+import gleam/option.{None, Some}
 import gleam/result
-import gleam/string
 
-import homeserve/couchdb.{type CouchConfig, type CouchError}
+import homeserve/cache
+import homeserve/config.{type MnesiaConfig}
+import homeserve/mnesia_db.{type MnesiaError, panel_table, volunteer_table}
 import homeserve/pages/panel/types.{
   type Credits, type Media, type Meta, type Panel, type ParseError, Credits,
   Image, Media, Meta, Panel, Video,
 }
 import homeserve/volunteers.{type Volunteer, Volunteer}
-
-/// Document ID prefix for panels
-const panel_prefix = "panel:"
-
-/// Document ID prefix for volunteers
-const volunteer_prefix = "volunteer:"
-
-/// Converts a panel index to document ID
-fn index_to_id(index: Int) -> String {
-  panel_prefix <> int.to_string(index)
-}
-
-/// Converts a volunteer name to document ID
-fn volunteer_name_to_id(name: String) -> String {
-  volunteer_prefix <> name
-}
 
 // ---- JSON Encoding ----
 
@@ -81,7 +66,6 @@ fn encode_meta(meta: Meta) -> Json {
 /// Encodes a complete panel to JSON
 pub fn encode_panel(panel: Panel) -> Json {
   json.object([
-    #("_id", json.string(index_to_id(panel.meta.index))),
     #("type", json.string("panel")),
     #("meta", encode_meta(panel.meta)),
     #("content", json.string(panel.content)),
@@ -91,7 +75,6 @@ pub fn encode_panel(panel: Panel) -> Json {
 /// Encodes metadata only (for efficient caching)
 pub fn encode_meta_only(meta: Meta) -> Json {
   json.object([
-    #("_id", json.string(index_to_id(meta.index))),
     #("type", json.string("panel_meta")),
     #("meta", encode_meta(meta)),
   ])
@@ -100,7 +83,6 @@ pub fn encode_meta_only(meta: Meta) -> Json {
 /// Encodes a volunteer to JSON
 pub fn encode_volunteer(volunteer: Volunteer) -> Json {
   json.object([
-    #("_id", json.string(volunteer_name_to_id(volunteer.name))),
     #("type", json.string("volunteer")),
     #("name", json.string(volunteer.name)),
     #("social_links", json.array(volunteer.social_links, json.string)),
@@ -288,271 +270,188 @@ fn decode_volunteer(dict: Dict(String, Dynamic)) -> Result(Volunteer, Nil) {
   Ok(Volunteer(name: name, social_links: social_links, bio: bio))
 }
 
-// ---- Internal Helpers ----
+// ---- Error Conversion ----
 
-/// Extracts the revision string from a document dictionary.
-/// Returns None if the revision field is missing or invalid.
-fn extract_revision(dict: Dict(String, Dynamic)) -> Option(String) {
-  case dict.get(dict, "_rev") {
-    Ok(rev_dyn) ->
-      decode.run(rev_dyn, decode.string)
-      |> option.from_result
-    Error(_) -> None
-  }
-}
-
-/// Fetches an existing document and extracts its revision.
-/// Returns None if the document doesn't exist or has no revision.
-fn get_existing_revision(config: CouchConfig, doc_id: String) -> Option(String) {
-  case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> extract_revision(existing)
-    Error(_) -> None
-  }
-}
-
-/// Requires an existing document and returns it with its revision.
-/// Returns an error if the document doesn't exist or has no valid revision.
-fn require_existing_doc(
-  config: CouchConfig,
-  doc_id: String,
-) -> Result(#(Dict(String, Dynamic), String), CouchError) {
-  case couchdb.get_doc(config, doc_id) {
-    Ok(existing) -> {
-      case extract_revision(existing) {
-        Some(rev) -> Ok(#(existing, rev))
-        None -> Error(couchdb.InvalidResponse("Missing or invalid _rev field"))
-      }
-    }
-    Error(couchdb.NotFound(_)) ->
-      Error(couchdb.NotFound("Document does not exist"))
-    Error(err) -> Error(err)
+fn mnesia_error_to_parse_error(err: MnesiaError) -> ParseError {
+  case err {
+    mnesia_db.NotFound(msg) -> types.FileNotFound(msg)
+    mnesia_db.ConnectionError(msg) | mnesia_db.DatabaseError(msg) ->
+      types.DatabaseError(msg)
+    mnesia_db.Conflict(msg) | mnesia_db.InvalidResponse(msg) ->
+      types.InvalidFrontmatter(msg)
   }
 }
 
 // ---- Panel Public API ----
 
-/// Loads a panel by index from CouchDB
-pub fn load_panel(config: CouchConfig, index: Int) -> Result(Panel, ParseError) {
-  let doc_id = index_to_id(index)
-
-  case couchdb.get_doc(config, doc_id) {
-    Ok(dict) -> {
-      case decode_panel(dict) {
-        Ok(panel) -> Ok(panel)
-        Error(_) ->
-          Error(types.InvalidFrontmatter("Failed to decode panel document"))
-      }
-    }
-    Error(couchdb.NotFound(_)) -> {
-      Error(types.FileNotFound(doc_id))
-    }
-    Error(couchdb.ConnectionError(msg)) -> {
-      Error(types.DatabaseError(msg))
-    }
-    Error(err) -> {
-      Error(types.InvalidFrontmatter(couchdb.error_to_string(err)))
-    }
-  }
-}
-
-/// Loads only metadata for a panel
-pub fn load_meta(config: CouchConfig, index: Int) -> Result(Meta, ParseError) {
-  let doc_id = index_to_id(index)
-
-  case couchdb.get_doc(config, doc_id) {
-    Ok(dict) -> {
-      case dict.get(dict, "meta") {
-        Ok(meta_dyn) -> {
-          case
-            decode.run(meta_dyn, decode.dict(decode.string, decode.dynamic))
-          {
-            Ok(meta_dict) -> {
-              case decode_meta(meta_dict) {
-                Ok(meta) -> Ok(meta)
+/// Loads a panel by index from cache or Mnesia
+pub fn load_panel(index: Int) -> Result(Panel, ParseError) {
+  // Check cache first
+  case cache.get(index) {
+    Some(panel) -> Ok(panel)
+    None -> {
+      // Cache miss - load from Mnesia
+      case mnesia_db.get_doc_by_int(panel_table, index) {
+        Ok(dynamic_val) -> {
+          let dict_decoder = decode.dict(decode.string, decode.dynamic)
+          case decode.run(dynamic_val, dict_decoder) {
+            Ok(dict) -> {
+              case decode_panel(dict) {
+                Ok(panel) -> {
+                  // Store in cache for future reads
+                  cache.put(index, panel)
+                  Ok(panel)
+                }
                 Error(_) ->
-                  Error(types.InvalidFrontmatter("Failed to decode meta"))
+                  Error(types.InvalidFrontmatter(
+                    "Failed to decode panel document",
+                  ))
               }
             }
-            Error(_) -> Error(types.InvalidFrontmatter("Invalid meta format"))
+            Error(_) ->
+              Error(types.InvalidFrontmatter("Failed to decode document"))
           }
         }
-        Error(_) -> Error(types.MissingField("meta"))
+        Error(mnesia_db.NotFound(_)) ->
+          Error(types.FileNotFound("panel:" <> int.to_string(index)))
+        Error(err) -> Error(mnesia_error_to_parse_error(err))
       }
     }
-    Error(couchdb.NotFound(_)) -> Error(types.FileNotFound(doc_id))
-    Error(couchdb.ConnectionError(msg)) -> Error(types.DatabaseError(msg))
-    Error(err) -> Error(types.InvalidFrontmatter(couchdb.error_to_string(err)))
   }
 }
 
-/// Saves a panel to CouchDB
-/// If the panel already exists, updates it with the existing revision.
-pub fn save_panel(
-  config: CouchConfig,
-  panel: Panel,
-) -> Result(String, CouchError) {
-  let doc_id = index_to_id(panel.meta.index)
-  let doc = encode_panel(panel)
-  let rev = get_existing_revision(config, doc_id)
+/// Saves a panel to Mnesia and clears cache
+pub fn save_panel(panel: Panel) -> Result(Nil, MnesiaError) {
+  let key = panel.meta.index
+  let json_doc = encode_panel(panel)
+  let json_string = json.to_string(json_doc)
 
-  couchdb.put_doc(config, doc_id, doc, rev)
+  // Parse JSON to get a dynamic value for storage
+  case json.parse(json_string, using: decode.dynamic) {
+    Ok(dynamic_val) -> {
+      case mnesia_db.put_doc_by_int(panel_table, key, dynamic_val) {
+        Ok(_) -> {
+          // Clear cache on write to ensure consistency
+          cache.clear()
+          Ok(Nil)
+        }
+        Error(err) -> Error(err)
+      }
+    }
+    Error(_) -> Error(mnesia_db.InvalidResponse("Failed to encode panel"))
+  }
 }
 
 /// Gets all panel metadata (for listing/caching)
-pub fn get_all_meta(config: CouchConfig) -> Result(List(Meta), CouchError) {
-  use docs <- result.try(couchdb.get_all_docs(config))
+pub fn get_all_meta() -> Result(List(Meta), MnesiaError) {
+  // Check cache first
+  case cache.get_meta_list() {
+    Some(metas) -> Ok(metas)
+    None -> {
+      // Cache miss - load from Mnesia
+      use docs <- result.try(mnesia_db.get_all_docs(panel_table))
 
-  let metas =
-    list.filter_map(docs, fn(doc) {
-      // Skip design documents
-      case dict.get(doc, "_id") {
-        Ok(id_dyn) -> {
-          case decode.run(id_dyn, decode.string) {
-            Ok(id) -> {
-              case
-                string.starts_with(id, "_")
-                || string.starts_with(id, "panel:") == False
-              {
-                True -> Error(Nil)
-                False -> {
-                  case decode_panel(doc) {
-                    Ok(p) -> Ok(p.meta)
-                    Error(_) -> Error(Nil)
-                  }
-                }
+      let metas =
+        list.filter_map(docs, fn(doc) {
+          let dict_decoder = decode.dict(decode.string, decode.dynamic)
+          case decode.run(doc, dict_decoder) {
+            Ok(dict) -> {
+              case decode_panel(dict) {
+                Ok(p) -> Ok(p.meta)
+                Error(_) -> Error(Nil)
               }
             }
             Error(_) -> Error(Nil)
           }
-        }
-        Error(_) -> Error(Nil)
-      }
-    })
+        })
 
-  Ok(metas)
+      // Store in cache
+      cache.put_meta_list(metas)
+      Ok(metas)
+    }
+  }
 }
 
-/// Bulk saves multiple panels to CouchDB
-pub fn bulk_save_panels(
-  config: CouchConfig,
-  panels: List(Panel),
-) -> Result(List(String), CouchError) {
-  let docs = list.map(panels, encode_panel)
-  couchdb.bulk_docs(config, docs)
+/// Ensures the database exists (initializes Mnesia)
+pub fn initialize(config: MnesiaConfig) -> Result(Nil, MnesiaError) {
+  mnesia_db.ensure_database(config)
 }
 
-/// Gets changes since a sequence number
-pub fn get_changes(
-  config: CouchConfig,
-  since: Option(String),
-) -> Result(#(String, List(Meta)), CouchError) {
-  use #(last_seq, changes) <- result.try(couchdb.get_changes(config, since))
-
-  let metas =
-    list.filter_map(changes, fn(doc) {
-      case decode_panel(doc) {
-        Ok(p) -> Ok(p.meta)
-        Error(_) -> Error(Nil)
-      }
-    })
-
-  Ok(#(last_seq, metas))
+/// Updates an existing panel in Mnesia
+/// Note: Mnesia doesn't need explicit update - put_doc handles it
+pub fn update_panel(panel: Panel) -> Result(Nil, MnesiaError) {
+  // First check if the panel exists
+  case load_panel(panel.meta.index) {
+    Ok(_) -> save_panel(panel)
+    Error(types.FileNotFound(_)) ->
+      Error(mnesia_db.NotFound("Panel does not exist"))
+    Error(_) ->
+      Error(mnesia_db.DatabaseError("Failed to check panel existence"))
+  }
 }
 
-/// Ensures the database exists
-pub fn initialize(config: CouchConfig) -> Result(Nil, CouchError) {
-  couchdb.ensure_database(config)
-}
-
-/// Updates an existing panel in CouchDB
-/// Requires the panel to already exist (will fail if not found)
-pub fn update_panel(
-  config: CouchConfig,
-  panel: Panel,
-) -> Result(String, CouchError) {
-  let doc_id = index_to_id(panel.meta.index)
-  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
-
-  let doc = encode_panel(panel)
-  couchdb.put_doc(config, doc_id, doc, Some(rev))
-}
-
-/// Deletes a panel from CouchDB
-pub fn delete_panel(config: CouchConfig, index: Int) -> Result(Nil, CouchError) {
-  let doc_id = index_to_id(index)
-  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
-
-  couchdb.delete_doc(config, doc_id, rev)
+/// Deletes a panel from Mnesia and clears cache
+pub fn delete_panel(index: Int) -> Result(Nil, MnesiaError) {
+  case mnesia_db.delete_doc_by_int(panel_table, index) {
+    Ok(_) -> {
+      // Clear cache on delete to ensure consistency
+      cache.clear()
+      Ok(Nil)
+    }
+    Error(err) -> Error(err)
+  }
 }
 
 // ---- Volunteer Public API ----
 
-/// Loads a volunteer by name from CouchDB
+/// Loads a volunteer by name from Mnesia
 pub fn load_volunteer(
-  config: CouchConfig,
   name: String,
 ) -> Result(Volunteer, volunteers.VolunteerError) {
-  let doc_id = volunteer_name_to_id(name)
-
-  case couchdb.get_doc(config, doc_id) {
-    Ok(dict) -> {
-      case decode_volunteer(dict) {
-        Ok(volunteer) -> Ok(volunteer)
-        Error(_) ->
-          Error(volunteers.ParseError("Failed to decode volunteer document"))
+  case mnesia_db.get_doc(volunteer_table, name) {
+    Ok(dynamic_val) -> {
+      let dict_decoder = decode.dict(decode.string, decode.dynamic)
+      case decode.run(dynamic_val, dict_decoder) {
+        Ok(dict) -> {
+          case decode_volunteer(dict) {
+            Ok(volunteer) -> Ok(volunteer)
+            Error(_) ->
+              Error(volunteers.ParseError("Failed to decode volunteer document"))
+          }
+        }
+        Error(_) -> Error(volunteers.ParseError("Failed to decode document"))
       }
     }
-    Error(couchdb.NotFound(_)) -> {
-      Error(volunteers.FileNotFound(doc_id))
-    }
-    Error(couchdb.ConnectionError(msg)) -> {
-      Error(volunteers.ParseError("Database connection error: " <> msg))
-    }
-    Error(err) -> {
-      Error(volunteers.ParseError(couchdb.error_to_string(err)))
+    Error(_err) -> {
+      // Any error (including NotFound) means the volunteer doesn't exist
+      Error(volunteers.FileNotFound(name))
     }
   }
 }
 
-/// Saves a volunteer to CouchDB
-/// If the volunteer already exists, updates it with the existing revision.
-pub fn save_volunteer(
-  config: CouchConfig,
-  volunteer: Volunteer,
-) -> Result(String, CouchError) {
-  let doc_id = volunteer_name_to_id(volunteer.name)
-  let doc = encode_volunteer(volunteer)
-  let rev = get_existing_revision(config, doc_id)
+/// Saves a volunteer to Mnesia
+pub fn save_volunteer(volunteer: Volunteer) -> Result(Nil, MnesiaError) {
+  let key = volunteer.name
+  let json_doc = encode_volunteer(volunteer)
+  let json_string = json.to_string(json_doc)
 
-  couchdb.put_doc(config, doc_id, doc, rev)
+  case json.parse(json_string, using: decode.dynamic) {
+    Ok(dynamic_val) -> mnesia_db.put_doc(volunteer_table, key, dynamic_val)
+    Error(_) -> Error(mnesia_db.InvalidResponse("Failed to encode volunteer"))
+  }
 }
 
-/// Gets all volunteers from CouchDB
-pub fn get_all_volunteers(
-  config: CouchConfig,
-) -> Result(List(Volunteer), CouchError) {
-  use docs <- result.try(couchdb.get_all_docs(config))
+/// Gets all volunteers from Mnesia
+pub fn get_all_volunteers() -> Result(List(Volunteer), MnesiaError) {
+  use docs <- result.try(mnesia_db.get_all_docs(volunteer_table))
 
-  let volunteers =
+  let volunteers_list =
     list.filter_map(docs, fn(doc) {
-      // Skip design documents and non-volunteer docs
-      case dict.get(doc, "_id") {
-        Ok(id_dyn) -> {
-          case decode.run(id_dyn, decode.string) {
-            Ok(id) -> {
-              case
-                string.starts_with(id, "_")
-                || string.starts_with(id, "volunteer:") == False
-              {
-                True -> Error(Nil)
-                False -> {
-                  case decode_volunteer(doc) {
-                    Ok(v) -> Ok(v)
-                    Error(_) -> Error(Nil)
-                  }
-                }
-              }
-            }
+      let dict_decoder = decode.dict(decode.string, decode.dynamic)
+      case decode.run(doc, dict_decoder) {
+        Ok(dict) -> {
+          case decode_volunteer(dict) {
+            Ok(v) -> Ok(v)
             Error(_) -> Error(Nil)
           }
         }
@@ -560,47 +459,42 @@ pub fn get_all_volunteers(
       }
     })
 
-  Ok(volunteers)
+  Ok(volunteers_list)
 }
 
-/// Updates an existing volunteer in CouchDB
-/// Requires the volunteer to already exist (will fail if not found)
-pub fn update_volunteer(
-  config: CouchConfig,
-  volunteer: Volunteer,
-) -> Result(String, CouchError) {
-  let doc_id = volunteer_name_to_id(volunteer.name)
-  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
-
-  let doc = encode_volunteer(volunteer)
-  couchdb.put_doc(config, doc_id, doc, Some(rev))
+/// Updates an existing volunteer in Mnesia
+pub fn update_volunteer(volunteer: Volunteer) -> Result(Nil, MnesiaError) {
+  // First check if the volunteer exists
+  case load_volunteer(volunteer.name) {
+    Ok(_) -> save_volunteer(volunteer)
+    Error(volunteers.FileNotFound(_)) ->
+      Error(mnesia_db.NotFound("Volunteer does not exist"))
+    Error(_) ->
+      Error(mnesia_db.DatabaseError("Failed to check volunteer existence"))
+  }
 }
 
-/// Deletes a volunteer from CouchDB
-pub fn delete_volunteer(
-  config: CouchConfig,
-  name: String,
-) -> Result(Nil, CouchError) {
-  let doc_id = volunteer_name_to_id(name)
-  use #(_, rev) <- result.try(require_existing_doc(config, doc_id))
-
-  couchdb.delete_doc(config, doc_id, rev)
+/// Deletes a volunteer from Mnesia
+pub fn delete_volunteer(name: String) -> Result(Nil, MnesiaError) {
+  mnesia_db.delete_doc(volunteer_table, name)
 }
 
-/// Gets volunteer changes since a sequence number
-pub fn get_volunteer_changes(
-  config: CouchConfig,
-  since: Option(String),
-) -> Result(#(String, List(Volunteer)), CouchError) {
-  use #(last_seq, changes) <- result.try(couchdb.get_changes(config, since))
-
-  let volunteers =
-    list.filter_map(changes, fn(doc) {
-      case decode_volunteer(doc) {
-        Ok(v) -> Ok(v)
-        Error(_) -> Error(Nil)
+/// Clears all data from both panels and volunteers tables
+/// Useful for testing
+pub fn clear_all_data() -> Result(Nil, MnesiaError) {
+  // Clear panels table
+  case mnesia_db.clear_table(panel_table) {
+    Error(err) -> Error(err)
+    Ok(_) -> {
+      // Clear volunteers table
+      case mnesia_db.clear_table(volunteer_table) {
+        Error(err) -> Error(err)
+        Ok(_) -> {
+          // Also clear cache to ensure consistency
+          cache.clear()
+          Ok(Nil)
+        }
       }
-    })
-
-  Ok(#(last_seq, volunteers))
+    }
+  }
 }
