@@ -68,18 +68,17 @@ pub fn serve_admin(req: Request, cfg: Config) -> Response {
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
       let csrf_token = auth.generate_csrf_token()
       let page =
         base.Page(
           head: [html.title([], "Admin - Create Panel | Homeserve")],
           css: [],
-          body: [forms.render_create_form(token, csrf_token, cfg)],
+          body: [forms.render_create_form(csrf_token, cfg)],
         )
 
       // Set CSRF token cookie
       let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-      wisp.set_cookie(resp, req, "csrf_token", csrf_token, wisp.Signed, 3600)
+      auth.set_csrf_cookie(resp, req, csrf_token)
     }
   }
 }
@@ -139,7 +138,6 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
     False -> auth.render_login_page()
     True -> {
       use body <- wisp.require_form(req)
-      let token = auth.get_token_string(req)
 
       // Validate CSRF token
       let csrf_token = util.get_form_field(body, "csrf_token")
@@ -147,7 +145,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
         False -> {
           util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
-            [#("/admin?token=" <> token, "Back to Admin")],
+            [#("/admin", "Back to Admin")],
             403,
           )
         }
@@ -157,7 +155,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
               util.render_error_page(
                 "Invalid panel index. Must be a number.",
                 [
-                  #("/admin?token=" <> token, "Back to Admin"),
+                  #("/admin", "Back to Admin"),
                 ],
                 400,
               )
@@ -174,7 +172,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
                   let error_msg = util.format_validation_errors(errors)
                   util.render_error_page(
                     "Validation failed: " <> error_msg,
-                    [#("/admin?token=" <> token, "Back to Admin")],
+                    [#("/admin", "Back to Admin")],
                     400,
                   )
                 }
@@ -187,8 +185,8 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
                           <> int.to_string(index)
                           <> " created successfully!",
                         [
-                          #("/admin?token=" <> token, "Back to Admin"),
-                          #("/admin/list?token=" <> token, "View All Panels"),
+                          #("/admin", "Back to Admin"),
+                          #("/admin/list", "View All Panels"),
                         ],
                         201,
                       )
@@ -205,7 +203,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
                         "Failed to save panel: "
                           <> mnesia_db.error_to_string(err),
                         [
-                          #("/admin?token=" <> token, "Back to Admin"),
+                          #("/admin", "Back to Admin"),
                         ],
                         500,
                       )
@@ -228,8 +226,6 @@ pub fn serve_list(req: Request, cfg: Config) -> Response {
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
-
       // Parse pagination parameters
       let query_params = wisp.get_query(req)
       let page = pagination.parse_page_param(query_params)
@@ -255,7 +251,6 @@ pub fn serve_list(req: Request, cfg: Config) -> Response {
               css: [],
               body: [
                 forms.render_panel_list(
-                  token,
                   paginated_panels,
                   current_page,
                   total_pages,
@@ -273,7 +268,7 @@ pub fn serve_list(req: Request, cfg: Config) -> Response {
           util.render_error_page(
             "Failed to load panels: " <> mnesia_db.error_to_string(err),
             [
-              #("/admin?token=" <> token, "Back to Admin"),
+              #("/admin", "Back to Admin"),
             ],
             500,
           )
@@ -290,13 +285,12 @@ pub fn serve_edit(req: Request, cfg: Config, panel_index: String) -> Response {
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
       case int.base_parse(panel_index, 10) {
         Error(_) -> {
           util.render_error_page(
             "Invalid panel index.",
             [
-              #("/admin/list?token=" <> token, "Back to List"),
+              #("/admin/list", "Back to List"),
             ],
             400,
           )
@@ -309,23 +303,16 @@ pub fn serve_edit(req: Request, cfg: Config, panel_index: String) -> Response {
                 base.Page(
                   head: [html.title([], "Admin - Edit Panel | Homeserve")],
                   css: [],
-                  body: [forms.render_edit_form(token, csrf_token, panel)],
+                  body: [forms.render_edit_form(csrf_token, panel)],
                 )
               let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-              wisp.set_cookie(
-                resp,
-                req,
-                "csrf_token",
-                csrf_token,
-                wisp.PlainText,
-                3600,
-              )
+              auth.set_csrf_cookie(resp, req, csrf_token)
             }
             Error(types.FileNotFound(_)) -> {
               util.render_error_page(
-                "Panel #" <> panel_index <> " not found.",
+                "Panel not found.",
                 [
-                  #("/admin/list?token=" <> token, "Back to List"),
+                  #("/admin/list", "Back to List"),
                 ],
                 404,
               )
@@ -336,9 +323,9 @@ pub fn serve_edit(req: Request, cfg: Config, panel_index: String) -> Response {
                 "Failed to load panel #" <> panel_index,
               )
               util.render_error_page(
-                "Failed to load panel #" <> panel_index,
+                "Unable to load panel. Please try again later.",
                 [
-                  #("/admin/list?token=" <> token, "Back to List"),
+                  #("/admin/list", "Back to List"),
                 ],
                 500,
               )
@@ -350,6 +337,55 @@ pub fn serve_edit(req: Request, cfg: Config, panel_index: String) -> Response {
   }
 }
 
+// ---- Helper Functions ----
+
+fn render_delete_confirmation(
+  csrf_token: String,
+  panel_index: String,
+  panel: types.Panel,
+) {
+  html.div([attribute.class("dead-center")], [
+    html.h1([], [html.text("DELETE PANEL")]),
+    html.p([], [
+      html.text("Panel #" <> panel_index <> ": \"" <> panel.meta.title <> "\""),
+    ]),
+    html.p([attribute.class("status-draft")], [
+      html.text("This action cannot be undone!"),
+    ]),
+    html.form(
+      [
+        attribute.method("POST"),
+        attribute.action("/admin/delete/" <> panel_index),
+      ],
+      [
+        html.input([
+          attribute.type_("hidden"),
+          attribute.name("csrf_token"),
+          attribute.value(csrf_token),
+        ]),
+        html.div([attribute.class("flex-row")], [
+          html.button(
+            [attribute.type_("submit"), attribute.class("btn btn-danger")],
+            [html.text("YES, DELETE")],
+          ),
+          html.a(
+            [
+              attribute.href("/admin/list"),
+              attribute.class("btn btn-secondary"),
+            ],
+            [html.text("CANCEL")],
+          ),
+        ]),
+      ],
+    ),
+  ])
+}
+
+/// Sort panels by index
+fn sort_panels_by_index(panels: List(types.Meta)) -> List(types.Meta) {
+  list.sort(panels, fn(a, b) { int.compare(a.index, b.index) })
+}
+
 /// Handle panel update (POST)
 pub fn handle_update(req: Request, cfg: Config) -> Response {
   use <- wisp.require_method(req, http.Post)
@@ -358,7 +394,6 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
     False -> auth.render_login_page()
     True -> {
       use body <- wisp.require_form(req)
-      let token = auth.get_token_string(req)
 
       // Validate CSRF token
       let csrf_token = util.get_form_field(body, "csrf_token")
@@ -366,7 +401,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
         False -> {
           util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
-            [#("/admin/list?token=" <> token, "Back to List")],
+            [#("/admin/list", "Back to List")],
             403,
           )
         }
@@ -376,7 +411,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
               util.render_error_page(
                 "Invalid panel index.",
                 [
-                  #("/admin/list?token=" <> token, "Back to List"),
+                  #("/admin/list", "Back to List"),
                 ],
                 400,
               )
@@ -391,7 +426,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                   let error_msg = util.format_validation_errors(errors)
                   util.render_error_page(
                     "Validation failed: " <> error_msg,
-                    [#("/admin/list?token=" <> token, "Back to List")],
+                    [#("/admin/list", "Back to List")],
                     400,
                   )
                 }
@@ -404,7 +439,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                           <> int.to_string(index)
                           <> " updated successfully!",
                         [
-                          #("/admin/list?token=" <> token, "Back to List"),
+                          #("/admin/list", "Back to List"),
                           #("/read/" <> int.to_string(index), "View Panel"),
                         ],
                         200,
@@ -414,7 +449,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                       util.render_error_page(
                         "Panel #" <> int.to_string(index) <> " not found.",
                         [
-                          #("/admin/list?token=" <> token, "Back to List"),
+                          #("/admin/list", "Back to List"),
                         ],
                         404,
                       )
@@ -431,7 +466,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                         "Failed to update panel: "
                           <> mnesia_db.error_to_string(err),
                         [
-                          #("/admin/list?token=" <> token, "Back to List"),
+                          #("/admin/list", "Back to List"),
                         ],
                         500,
                       )
@@ -454,13 +489,12 @@ pub fn handle_delete(req: Request, cfg: Config, panel_index: String) -> Response
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
       case int.base_parse(panel_index, 10) {
         Error(_) -> {
           util.render_error_page(
             "Invalid panel index.",
             [
-              #("/admin/list?token=" <> token, "Back to List"),
+              #("/admin/list", "Back to List"),
             ],
             400,
           )
@@ -474,29 +508,17 @@ pub fn handle_delete(req: Request, cfg: Config, panel_index: String) -> Response
                   head: [html.title([], "Admin - Delete Panel | Homeserve")],
                   css: [],
                   body: [
-                    render_delete_confirmation(
-                      token,
-                      csrf_token,
-                      panel_index,
-                      panel,
-                    ),
+                    render_delete_confirmation(csrf_token, panel_index, panel),
                   ],
                 )
               let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
-              wisp.set_cookie(
-                resp,
-                req,
-                "csrf_token",
-                csrf_token,
-                wisp.PlainText,
-                3600,
-              )
+              auth.set_csrf_cookie(resp, req, csrf_token)
             }
             Error(types.FileNotFound(_)) -> {
               util.render_error_page(
-                "Panel #" <> panel_index <> " not found.",
+                "Panel not found.",
                 [
-                  #("/admin/list?token=" <> token, "Back to List"),
+                  #("/admin/list", "Back to List"),
                 ],
                 404,
               )
@@ -507,9 +529,9 @@ pub fn handle_delete(req: Request, cfg: Config, panel_index: String) -> Response
                 "Failed to load panel #" <> panel_index,
               )
               util.render_error_page(
-                "Failed to load panel #" <> panel_index,
+                "Unable to load panel. Please try again later.",
                 [
-                  #("/admin/list?token=" <> token, "Back to List"),
+                  #("/admin/list", "Back to List"),
                 ],
                 500,
               )
@@ -533,7 +555,6 @@ pub fn handle_delete_post(
     False -> auth.render_login_page()
     True -> {
       use body <- wisp.require_form(req)
-      let token = auth.get_token_string(req)
 
       // Validate CSRF token
       let csrf_token = util.get_form_field(body, "csrf_token")
@@ -541,7 +562,7 @@ pub fn handle_delete_post(
         False -> {
           util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
-            [#("/admin/list?token=" <> token, "Back to List")],
+            [#("/admin/list", "Back to List")],
             403,
           )
         }
@@ -551,7 +572,7 @@ pub fn handle_delete_post(
               util.render_error_page(
                 "Invalid panel index.",
                 [
-                  #("/admin/list?token=" <> token, "Back to List"),
+                  #("/admin/list", "Back to List"),
                 ],
                 400,
               )
@@ -562,14 +583,14 @@ pub fn handle_delete_post(
                   logging.log_panel("deleted", index)
                   util.render_success_page(
                     "Panel #" <> panel_index <> " deleted successfully.",
-                    [#("/admin/list?token=" <> token, "Back to List")],
+                    [#("/admin/list", "Back to List")],
                     200,
                   )
                 }
                 Error(mnesia_db.NotFound(_)) -> {
                   util.render_error_page(
                     "Panel #" <> panel_index <> " not found.",
-                    [#("/admin/list?token=" <> token, "Back to List")],
+                    [#("/admin/list", "Back to List")],
                     404,
                   )
                 }
@@ -583,7 +604,7 @@ pub fn handle_delete_post(
                   )
                   util.render_error_page(
                     "Failed to delete panel: " <> mnesia_db.error_to_string(err),
-                    [#("/admin/list?token=" <> token, "Back to List")],
+                    [#("/admin/list", "Back to List")],
                     500,
                   )
                 }
@@ -594,54 +615,4 @@ pub fn handle_delete_post(
       }
     }
   }
-}
-
-// ---- Helper Functions ----
-
-fn render_delete_confirmation(
-  token: String,
-  csrf_token: String,
-  panel_index: String,
-  panel: types.Panel,
-) {
-  html.div([attribute.class("dead-center")], [
-    html.h1([], [html.text("DELETE PANEL")]),
-    html.p([], [
-      html.text("Panel #" <> panel_index <> ": \"" <> panel.meta.title <> "\""),
-    ]),
-    html.p([attribute.class("status-draft")], [
-      html.text("This action cannot be undone!"),
-    ]),
-    html.form(
-      [
-        attribute.method("POST"),
-        attribute.action("/admin/delete/" <> panel_index <> "?token=" <> token),
-      ],
-      [
-        html.input([
-          attribute.type_("hidden"),
-          attribute.name("csrf_token"),
-          attribute.value(csrf_token),
-        ]),
-        html.div([attribute.class("flex-row")], [
-          html.button(
-            [attribute.type_("submit"), attribute.class("btn btn-danger")],
-            [html.text("YES, DELETE")],
-          ),
-          html.a(
-            [
-              attribute.href("/admin/list?token=" <> token),
-              attribute.class("btn btn-secondary"),
-            ],
-            [html.text("CANCEL")],
-          ),
-        ]),
-      ],
-    ),
-  ])
-}
-
-/// Sort panels by index
-fn sort_panels_by_index(panels: List(types.Meta)) -> List(types.Meta) {
-  list.sort(panels, fn(a, b) { int.compare(a.index, b.index) })
 }

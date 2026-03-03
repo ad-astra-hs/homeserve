@@ -40,13 +40,12 @@ pub fn serve_volunteer_admin(req: Request, cfg: Config) -> Response {
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
       let csrf_token = auth.generate_csrf_token()
       let page =
         base.Page(
           head: [html.title([], "Admin - Volunteers | Homeserve")],
           css: [],
-          body: [forms.render_volunteer_create_form(token, csrf_token)],
+          body: [forms.render_volunteer_create_form(csrf_token)],
         )
 
       // Set CSRF token cookie
@@ -64,7 +63,6 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
     False -> auth.render_login_page()
     True -> {
       use body <- wisp.require_form(req)
-      let token = auth.get_token_string(req)
 
       // Validate CSRF token
       let csrf_token = util.get_form_field(body, "csrf_token")
@@ -72,7 +70,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
         False -> {
           util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
-            [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
+            [#("/admin/volunteers", "Back to Volunteers")],
             403,
           )
         }
@@ -82,7 +80,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
               let error_msg = format_validation_errors(errors)
               util.render_error_page(
                 "Validation failed: " <> error_msg,
-                [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
+                [#("/admin/volunteers", "Back to Volunteers")],
                 400,
               )
             }
@@ -93,14 +91,8 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
                   util.render_success_page(
                     "Volunteer " <> volunteer.name <> " created successfully!",
                     [
-                      #(
-                        "/admin/volunteers?token=" <> token,
-                        "Back to Volunteers",
-                      ),
-                      #(
-                        "/admin/volunteers/list?token=" <> token,
-                        "View All Volunteers",
-                      ),
+                      #("/admin/volunteers", "Back to Volunteers"),
+                      #("/admin/volunteers/list", "View All Volunteers"),
                     ],
                     201,
                   )
@@ -116,12 +108,7 @@ pub fn handle_create(req: Request, cfg: Config) -> Response {
                   util.render_error_page(
                     "Failed to save volunteer: "
                       <> mnesia_db.error_to_string(err),
-                    [
-                      #(
-                        "/admin/volunteers?token=" <> token,
-                        "Back to Volunteers",
-                      ),
-                    ],
+                    [#("/admin/volunteers", "Back to Volunteers")],
                     500,
                   )
                 }
@@ -141,8 +128,6 @@ pub fn serve_list(req: Request, cfg: Config) -> Response {
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
-
       // Parse pagination parameters
       let query_params = wisp.get_query(req)
       let page = pagination.parse_page_param(query_params)
@@ -175,7 +160,6 @@ pub fn serve_list(req: Request, cfg: Config) -> Response {
               css: [],
               body: [
                 forms.render_volunteer_list(
-                  token,
                   paginated_volunteers,
                   current_page,
                   total_pages,
@@ -192,7 +176,7 @@ pub fn serve_list(req: Request, cfg: Config) -> Response {
           )
           util.render_error_page(
             "Failed to load volunteers: " <> mnesia_db.error_to_string(err),
-            [#("/admin/volunteers?token=" <> token, "Back to Volunteers")],
+            [#("/admin/volunteers", "Back to Volunteers")],
             500,
           )
         }
@@ -208,7 +192,6 @@ pub fn serve_edit(req: Request, cfg: Config, volunteer_name: String) -> Response
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
       let decoded_name =
         uri.percent_decode(volunteer_name) |> result.unwrap(volunteer_name)
 
@@ -220,7 +203,7 @@ pub fn serve_edit(req: Request, cfg: Config, volunteer_name: String) -> Response
               head: [html.title([], "Admin - Edit Volunteer | Homeserve")],
               css: [],
               body: [
-                forms.render_volunteer_edit_form(token, csrf_token, volunteer),
+                forms.render_volunteer_edit_form(csrf_token, volunteer),
               ],
             )
           let resp = wisp.ok() |> wisp.html_body(base.render_page(page))
@@ -229,7 +212,7 @@ pub fn serve_edit(req: Request, cfg: Config, volunteer_name: String) -> Response
         Error(volunteers.FileNotFound(_)) -> {
           util.render_error_page(
             "Volunteer \"" <> decoded_name <> "\" not found.",
-            [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+            [#("/admin/volunteers/list", "Back to List")],
             404,
           )
         }
@@ -240,7 +223,7 @@ pub fn serve_edit(req: Request, cfg: Config, volunteer_name: String) -> Response
           )
           util.render_error_page(
             "Failed to load volunteer \"" <> decoded_name <> "\"",
-            [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+            [#("/admin/volunteers/list", "Back to List")],
             500,
           )
         }
@@ -257,7 +240,6 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
     False -> auth.render_login_page()
     True -> {
       use body <- wisp.require_form(req)
-      let token = auth.get_token_string(req)
 
       // Validate CSRF token
       let csrf_token = util.get_form_field(body, "csrf_token")
@@ -265,7 +247,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
         False -> {
           util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
-            [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+            [#("/admin/volunteers/list", "Back to List")],
             403,
           )
         }
@@ -276,7 +258,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
               let error_msg = format_validation_errors(errors)
               util.render_error_page(
                 "Validation failed: " <> error_msg,
-                [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+                [#("/admin/volunteers/list", "Back to List")],
                 400,
               )
             }
@@ -305,10 +287,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                   util.render_success_page(
                     "Volunteer " <> volunteer.name <> " updated successfully!",
                     [
-                      #(
-                        "/admin/volunteers/list?token=" <> token,
-                        "Back to List",
-                      ),
+                      #("/admin/volunteers/list", "Back to List"),
                       #(
                         "/hoc/" <> uri.percent_encode(volunteer.name),
                         "View Profile",
@@ -320,12 +299,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                 Error(mnesia_db.NotFound(_)) -> {
                   util.render_error_page(
                     "Volunteer \"" <> volunteer.name <> "\" not found.",
-                    [
-                      #(
-                        "/admin/volunteers/list?token=" <> token,
-                        "Back to List",
-                      ),
-                    ],
+                    [#("/admin/volunteers/list", "Back to List")],
                     404,
                   )
                 }
@@ -340,12 +314,7 @@ pub fn handle_update(req: Request, cfg: Config) -> Response {
                   util.render_error_page(
                     "Failed to update volunteer: "
                       <> mnesia_db.error_to_string(err),
-                    [
-                      #(
-                        "/admin/volunteers/list?token=" <> token,
-                        "Back to List",
-                      ),
-                    ],
+                    [#("/admin/volunteers/list", "Back to List")],
                     500,
                   )
                 }
@@ -369,7 +338,6 @@ pub fn handle_delete(
   case auth.is_authenticated(req, cfg) {
     False -> auth.render_login_page()
     True -> {
-      let token = auth.get_token_string(req)
       let decoded_name =
         uri.percent_decode(volunteer_name) |> result.unwrap(volunteer_name)
 
@@ -383,7 +351,6 @@ pub fn handle_delete(
               css: [],
               body: [
                 forms.render_volunteer_delete_confirmation(
-                  token,
                   csrf_token,
                   decoded_name,
                 ),
@@ -395,7 +362,7 @@ pub fn handle_delete(
         Error(volunteers.FileNotFound(_)) -> {
           util.render_error_page(
             "Volunteer \"" <> decoded_name <> "\" not found.",
-            [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+            [#("/admin/volunteers/list", "Back to List")],
             404,
           )
         }
@@ -406,7 +373,7 @@ pub fn handle_delete(
           )
           util.render_error_page(
             "Failed to load volunteer \"" <> decoded_name <> "\"",
-            [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+            [#("/admin/volunteers/list", "Back to List")],
             500,
           )
         }
@@ -427,7 +394,6 @@ pub fn handle_delete_post(
     False -> auth.render_login_page()
     True -> {
       use body <- wisp.require_form(req)
-      let token = auth.get_token_string(req)
       let decoded_name =
         uri.percent_decode(volunteer_name) |> result.unwrap(volunteer_name)
 
@@ -437,7 +403,7 @@ pub fn handle_delete_post(
         False -> {
           util.render_error_page(
             "Invalid or missing CSRF token. Please refresh the page and try again.",
-            [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+            [#("/admin/volunteers/list", "Back to List")],
             403,
           )
         }
@@ -447,14 +413,14 @@ pub fn handle_delete_post(
               logging.log_volunteer("deleted", decoded_name)
               util.render_success_page(
                 "Volunteer \"" <> decoded_name <> "\" deleted successfully.",
-                [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+                [#("/admin/volunteers/list", "Back to List")],
                 200,
               )
             }
             Error(mnesia_db.NotFound(_)) -> {
               util.render_error_page(
                 "Volunteer \"" <> decoded_name <> "\" not found.",
-                [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+                [#("/admin/volunteers/list", "Back to List")],
                 404,
               )
             }
@@ -468,7 +434,7 @@ pub fn handle_delete_post(
               )
               util.render_error_page(
                 "Failed to delete volunteer: " <> mnesia_db.error_to_string(err),
-                [#("/admin/volunteers/list?token=" <> token, "Back to List")],
+                [#("/admin/volunteers/list", "Back to List")],
                 500,
               )
             }

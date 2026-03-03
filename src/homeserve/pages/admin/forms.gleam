@@ -250,7 +250,7 @@ fn render_csrf_field(csrf_token: String) {
   ])
 }
 
-pub fn render_create_form(token: String, csrf_token: String, cfg: Config) {
+pub fn render_create_form(csrf_token: String, cfg: Config) {
   let warning = case cfg.admin.token == "changeme" {
     True ->
       html.div(
@@ -273,14 +273,14 @@ pub fn render_create_form(token: String, csrf_token: String, cfg: Config) {
 
   html.div([attribute.class("page-container box")], [
     warning,
-    render_admin_nav(token),
+    render_admin_nav(),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("CREATE NEW PANEL"),
     ]),
     html.form(
       [
         attribute.method("POST"),
-        attribute.action("/admin/create?token=" <> token),
+        attribute.action("/admin/create"),
       ],
       [
         render_csrf_field(csrf_token),
@@ -311,7 +311,7 @@ pub fn render_create_form(token: String, csrf_token: String, cfg: Config) {
   ])
 }
 
-pub fn render_edit_form(token: String, csrf_token: String, panel: Panel) {
+pub fn render_edit_form(csrf_token: String, panel: Panel) {
   let media_kind = case panel.meta.media.kind {
     Image -> "image"
     Video -> "video"
@@ -332,14 +332,14 @@ pub fn render_edit_form(token: String, csrf_token: String, panel: Panel) {
   let js_files = string.join(panel.meta.js, ", ")
 
   html.div([attribute.class("page-container box-dark")], [
-    render_admin_nav(token),
+    render_admin_nav(),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("EDIT PANEL #" <> int.to_string(panel.meta.index)),
     ]),
     html.form(
       [
         attribute.method("POST"),
-        attribute.action("/admin/update?token=" <> token),
+        attribute.action("/admin/update"),
       ],
       [
         render_csrf_field(csrf_token),
@@ -376,7 +376,7 @@ pub fn render_edit_form(token: String, csrf_token: String, panel: Panel) {
           ),
           html.a(
             [
-              attribute.href("/admin/list?token=" <> token),
+              attribute.href("/admin/list"),
               attribute.class("btn btn-secondary"),
             ],
             [html.text("CANCEL")],
@@ -388,7 +388,6 @@ pub fn render_edit_form(token: String, csrf_token: String, panel: Panel) {
 }
 
 pub fn render_panel_list(
-  token: String,
   panels: List(Meta),
   current_page: Int,
   total_pages: Int,
@@ -398,7 +397,7 @@ pub fn render_panel_list(
     list.sort(panels, fn(a, b) { int.compare(a.index, b.index) })
 
   html.div([attribute.class("page-container box-dark")], [
-    render_admin_nav(token),
+    render_admin_nav(),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("ALL PANELS"),
     ]),
@@ -441,12 +440,7 @@ pub fn render_panel_list(
             html.td([], [
               html.a(
                 [
-                  attribute.href(
-                    "/admin/edit/"
-                    <> int.to_string(p.index)
-                    <> "?token="
-                    <> token,
-                  ),
+                  attribute.href("/admin/edit/" <> int.to_string(p.index)),
                   attribute.class("btn btn-secondary"),
                 ],
                 [html.text("EDIT")],
@@ -454,12 +448,7 @@ pub fn render_panel_list(
               html.text(" "),
               html.a(
                 [
-                  attribute.href(
-                    "/admin/delete/"
-                    <> int.to_string(p.index)
-                    <> "?token="
-                    <> token,
-                  ),
+                  attribute.href("/admin/delete/" <> int.to_string(p.index)),
                   attribute.class("btn btn-danger"),
                 ],
                 [html.text("DELETE")],
@@ -469,21 +458,21 @@ pub fn render_panel_list(
         }),
       ),
     ]),
-    render_pagination(token, current_page, total_pages, "list"),
+    render_pagination(current_page, total_pages, "list"),
   ])
 }
 
 /// Renders the volunteer create form
-pub fn render_volunteer_create_form(token: String, csrf_token: String) {
+pub fn render_volunteer_create_form(csrf_token: String) {
   html.div([attribute.class("page-container box")], [
-    render_volunteer_admin_nav(token),
+    render_volunteer_admin_nav(),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("CREATE NEW VOLUNTEER"),
     ]),
     html.form(
       [
         attribute.method("POST"),
-        attribute.action("/admin/volunteers/create?token=" <> token),
+        attribute.action("/admin/volunteers/create"),
       ],
       [
         render_csrf_field(csrf_token),
@@ -514,22 +503,18 @@ pub fn render_volunteer_create_form(token: String, csrf_token: String) {
 }
 
 /// Renders the volunteer edit form
-pub fn render_volunteer_edit_form(
-  token: String,
-  csrf_token: String,
-  volunteer: Volunteer,
-) {
+pub fn render_volunteer_edit_form(csrf_token: String, volunteer: Volunteer) {
   let social_links = string.join(volunteer.social_links, ", ")
 
   html.div([attribute.class("page-container box-dark")], [
-    render_volunteer_admin_nav(token),
+    render_volunteer_admin_nav(),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("EDIT VOLUNTEER: " <> volunteer.name),
     ]),
     html.form(
       [
         attribute.method("POST"),
-        attribute.action("/admin/volunteers/update?token=" <> token),
+        attribute.action("/admin/volunteers/update"),
       ],
       [
         render_csrf_field(csrf_token),
@@ -569,7 +554,7 @@ pub fn render_volunteer_edit_form(
           ),
           html.a(
             [
-              attribute.href("/admin/volunteers/list?token=" <> token),
+              attribute.href("/admin/volunteers/list"),
               attribute.class("btn btn-secondary"),
             ],
             [html.text("CANCEL")],
@@ -582,7 +567,6 @@ pub fn render_volunteer_edit_form(
 
 /// Renders the volunteer list with pagination
 pub fn render_volunteer_list(
-  token: String,
   volunteers: List(Volunteer),
   current_page: Int,
   total_pages: Int,
@@ -592,7 +576,7 @@ pub fn render_volunteer_list(
     list.sort(volunteers, fn(a, b) { string.compare(a.name, b.name) })
 
   html.div([attribute.class("page-container box-dark")], [
-    render_volunteer_admin_nav(token),
+    render_volunteer_admin_nav(),
     html.h2([attribute.class("heading-bordered text-center")], [
       html.text("ALL VOLUNTEERS"),
     ]),
@@ -629,10 +613,7 @@ pub fn render_volunteer_list(
               html.a(
                 [
                   attribute.href(
-                    "/admin/volunteers/edit/"
-                    <> uri.percent_encode(v.name)
-                    <> "?token="
-                    <> token,
+                    "/admin/volunteers/edit/" <> uri.percent_encode(v.name),
                   ),
                   attribute.class("btn btn-secondary"),
                 ],
@@ -642,10 +623,7 @@ pub fn render_volunteer_list(
               html.a(
                 [
                   attribute.href(
-                    "/admin/volunteers/delete/"
-                    <> uri.percent_encode(v.name)
-                    <> "?token="
-                    <> token,
+                    "/admin/volunteers/delete/" <> uri.percent_encode(v.name),
                   ),
                   attribute.class("btn btn-danger"),
                 ],
@@ -656,16 +634,12 @@ pub fn render_volunteer_list(
         }),
       ),
     ]),
-    render_pagination(token, current_page, total_pages, "volunteers/list"),
+    render_pagination(current_page, total_pages, "volunteers/list"),
   ])
 }
 
 /// Renders the volunteer delete confirmation
-pub fn render_volunteer_delete_confirmation(
-  token: String,
-  csrf_token: String,
-  name: String,
-) {
+pub fn render_volunteer_delete_confirmation(csrf_token: String, name: String) {
   html.div([attribute.class("dead-center")], [
     html.h1([], [html.text("DELETE VOLUNTEER")]),
     html.p([], [html.text("Volunteer: \"" <> name <> "\"")]),
@@ -676,10 +650,7 @@ pub fn render_volunteer_delete_confirmation(
       [
         attribute.method("POST"),
         attribute.action(
-          "/admin/volunteers/delete/"
-          <> uri.percent_encode(name)
-          <> "?token="
-          <> token,
+          "/admin/volunteers/delete/" <> uri.percent_encode(name),
         ),
       ],
       [
@@ -691,7 +662,7 @@ pub fn render_volunteer_delete_confirmation(
           ),
           html.a(
             [
-              attribute.href("/admin/volunteers/list?token=" <> token),
+              attribute.href("/admin/volunteers/list"),
               attribute.class("btn btn-secondary"),
             ],
             [html.text("CANCEL")],
@@ -702,25 +673,25 @@ pub fn render_volunteer_delete_confirmation(
   ])
 }
 
-fn render_admin_nav(token: String) {
+fn render_admin_nav() {
   html.div([attribute.class("nav-links")], [
     html.a(
       [
-        attribute.href("/admin?token=" <> token),
+        attribute.href("/admin"),
         attribute.class("btn btn-primary"),
       ],
       [html.text("CREATE")],
     ),
     html.a(
       [
-        attribute.href("/admin/list?token=" <> token),
+        attribute.href("/admin/list"),
         attribute.class("btn btn-secondary"),
       ],
       [html.text("LIST")],
     ),
     html.a(
       [
-        attribute.href("/admin/volunteers?token=" <> token),
+        attribute.href("/admin/volunteers"),
         attribute.class("btn btn-secondary"),
       ],
       [html.text("VOLUNTEERS")],
@@ -728,25 +699,25 @@ fn render_admin_nav(token: String) {
   ])
 }
 
-fn render_volunteer_admin_nav(token: String) {
+fn render_volunteer_admin_nav() {
   html.div([attribute.class("nav-links")], [
     html.a(
       [
-        attribute.href("/admin/volunteers?token=" <> token),
+        attribute.href("/admin/volunteers"),
         attribute.class("btn btn-primary"),
       ],
       [html.text("CREATE")],
     ),
     html.a(
       [
-        attribute.href("/admin/volunteers/list?token=" <> token),
+        attribute.href("/admin/volunteers/list"),
         attribute.class("btn btn-secondary"),
       ],
       [html.text("LIST")],
     ),
     html.a(
       [
-        attribute.href("/admin?token=" <> token),
+        attribute.href("/admin"),
         attribute.class("btn btn-secondary"),
       ],
       [html.text("PANELS")],
@@ -757,19 +728,9 @@ fn render_volunteer_admin_nav(token: String) {
 // ---- Pagination Component ----
 
 /// Renders pagination controls for admin pages
-fn render_pagination(
-  token: String,
-  current_page: Int,
-  total_pages: Int,
-  base_path: String,
-) {
+fn render_pagination(current_page: Int, total_pages: Int, base_path: String) {
   let build_url = fn(page) {
-    "/admin/"
-    <> base_path
-    <> "?token="
-    <> token
-    <> "&page="
-    <> int.to_string(page)
+    "/admin/" <> base_path <> "?page=" <> int.to_string(page)
   }
   pagination.render_pagination(
     current_page,

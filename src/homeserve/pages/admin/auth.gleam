@@ -16,6 +16,14 @@ import homeserve/base
 import homeserve/config.{type Config}
 import wisp.{type Request, type Response}
 
+// ---- Constants ----
+
+/// Cookie TTL for admin authentication (24 hours in seconds)
+const admin_token_ttl_seconds = 86_400
+
+/// Cookie TTL for CSRF tokens (1 hour in seconds)
+const csrf_token_ttl_seconds = 3600
+
 /// Check if the provided token matches the stored token.
 /// Supports both SHA-256 hashed tokens and plaintext tokens.
 pub fn verify_token(provided: String, stored: String) -> Bool {
@@ -97,8 +105,13 @@ pub fn set_token_cookie_and_redirect(
   redirect_path: String,
 ) -> Response {
   wisp.redirect(redirect_path)
-  |> wisp.set_cookie(req, "admin_token", token, wisp.Signed, 86_400)
-  // 24 hours, signed to prevent tampering
+  |> wisp.set_cookie(
+    req,
+    "admin_token",
+    token,
+    wisp.Signed,
+    admin_token_ttl_seconds,
+  )
 }
 
 /// Get token string or empty
@@ -124,13 +137,19 @@ pub fn validate_csrf_token(req: Request, form_token: String) -> Bool {
 }
 
 /// Sets the CSRF token as a signed cookie on the response.
-/// Default expiration is 1 hour (3600 seconds).
 pub fn set_csrf_cookie(
   resp: Response,
   req: Request,
   csrf_token: String,
 ) -> Response {
-  wisp.set_cookie(resp, req, "csrf_token", csrf_token, wisp.Signed, 3600)
+  wisp.set_cookie(
+    resp,
+    req,
+    "csrf_token",
+    csrf_token,
+    wisp.Signed,
+    csrf_token_ttl_seconds,
+  )
 }
 
 /// Render the login page response

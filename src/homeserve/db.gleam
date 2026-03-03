@@ -304,12 +304,12 @@ pub fn load_panel(index: Int) -> Result(Panel, ParseError) {
                 }
                 Error(_) ->
                   Error(types.InvalidFrontmatter(
-                    "Failed to decode panel document",
+                    "Panel data is corrupted or invalid",
                   ))
               }
             }
             Error(_) ->
-              Error(types.InvalidFrontmatter("Failed to decode document"))
+              Error(types.InvalidFrontmatter("Unable to read panel data"))
           }
         }
         Error(mnesia_db.NotFound(_)) ->
